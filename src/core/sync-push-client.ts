@@ -19,7 +19,14 @@ export interface PushClientOptions {
    * stood still for five days with 20 839 messages behind it. */
   maxBatchBytes?: number;
   /** Bounds a single POST. Without it a slow remote hangs on undici's default headers timeout and
-   * the failure surfaces as an opaque UND_ERR_HEADERS_TIMEOUT minutes later. */
+   * the failure surfaces as an opaque UND_ERR_HEADERS_TIMEOUT minutes later.
+   *
+   * Generous on purpose. The remote applies a batch synchronously — better-sqlite3 writes plus an
+   * FTS index pass — which pins its single thread and stops it answering anything at all, measured
+   * at a full core while catching up. Giving up at 60 s did not make that faster: the remote
+   * carried on applying the batch it had been sent, the client re-pushed the same rows on the next
+   * cycle, and the retry queued behind the work it had just abandoned. Waiting costs nothing here,
+   * since there is nothing else for this cycle to do meanwhile. */
   requestTimeoutMs?: number;
 }
 
@@ -36,7 +43,7 @@ export interface PushClientOptions {
 export async function runPushCycle(db: Db, opts: PushClientOptions): Promise<void> {
   const batchSize = opts.batchSize ?? 50;
   const maxBatchBytes = opts.maxBatchBytes ?? 8 * 1024 * 1024;
-  const requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
+  const requestTimeoutMs = opts.requestTimeoutMs ?? 240_000;
   let cursor = db.getRemoteSyncState(opts.remoteUrl).lastPushedSeq;
 
   while (true) {
