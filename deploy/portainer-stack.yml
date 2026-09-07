@@ -20,15 +20,16 @@ services:
       PORT: "4000"
       SYNC_HUB_DATA_DIR: /data
       SYNC_HUB_DISABLE_LOCAL_INGEST: "1"
-      # Connexion Google. Les quatre variables sont requises : s'il en manque une — et
-      # SYNC_HUB_GOOGLE_ALLOWED_DOMAINS en particulier — le flux reste désactivé, ce qui est
-      # voulu : sans restriction de domaine, « se connecter avec Google » vaut pour tout compte
-      # Google existant. Voir docs/CONNEXION-GOOGLE.md.
-      # Cloudflare Access - la voie recommandee : aucun secret ici, le tag AUD est public.
+      # Connexion par Cloudflare Access — la voie retenue. Rien de secret ici : le tag AUD
+      # identifie l'application, il ne l'ouvre pas, et c'est la signature du jeton qui fait foi.
       # Voir docs/CONNEXION-CLOUDFLARE-ACCESS.md.
       SYNC_HUB_ACCESS_TEAM_DOMAIN: "robinjoseph.cloudflareaccess.com"
-      SYNC_HUB_ACCESS_AUD: ""
+      SYNC_HUB_ACCESS_AUD: "fdba50177091c1595e55827d9ad0f9dbd74267d578e6a9fba169e85d150c5cb8"
       SYNC_HUB_ACCESS_ALLOWED_DOMAINS: "ekonum.fr"
+      # Connexion Google, laissée désactivée. Les quatre variables sont requises : s'il en manque
+      # une — et SYNC_HUB_GOOGLE_ALLOWED_DOMAINS en particulier — le flux reste désactivé, ce qui
+      # est voulu : sans restriction de domaine, « se connecter avec Google » vaut pour tout
+      # compte Google existant. Voir docs/CONNEXION-GOOGLE.md.
       SYNC_HUB_GOOGLE_CLIENT_ID: ""
       SYNC_HUB_GOOGLE_CLIENT_SECRET: ""
       SYNC_HUB_GOOGLE_REDIRECT_URI: "https://sync-hub.robin-joseph.fr/api/auth/google/callback"

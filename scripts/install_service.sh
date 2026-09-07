@@ -55,6 +55,15 @@ cat > "$PLIST_PATH" <<PLIST
     <key>SuccessfulExit</key>
     <false/>
   </dict>
+  <!-- launchd ne donne que 256 descripteurs de fichier à un agent, et le surveillant en ouvre
+       un par répertoire suivi. Passé un certain nombre de projets, chokidar lève EMFILE, le
+       processus meurt, KeepAlive le relance, il remeurt : une boucle où la synchro n'a jamais
+       le temps d'atteindre son cycle. Constaté en septembre 2026, 1 425 redémarrages. -->
+  <key>SoftResourceLimits</key>
+  <dict>
+    <key>NumberOfFiles</key>
+    <integer>8192</integer>
+  </dict>
   <key>StandardOutPath</key>
   <string>${LOG_DIR}/service.log</string>
   <key>StandardErrorPath</key>
