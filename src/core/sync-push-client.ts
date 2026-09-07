@@ -4,12 +4,20 @@ import type { PushBatch, PushResult } from '../types.js';
 export interface PushClientOptions {
   remoteUrl: string;
   remoteToken: string;
-  /** Messages per POST — kept well under the server's raised bodyLimit (see app.ts) since verbatim
-   * message content (tool outputs, diffs) varies wildly in size. 50 rather than something larger
-   * because the remote indexes every message into FTS as it applies the batch: on a small VPS a
-   * 200-message batch took long enough to blow Node's default fetch headers timeout, which stalls
-   * the whole sync. Smaller batches mean more round trips but ones that actually finish. */
+  /** Messages per POST, as an upper bound — the real limit is maxBatchBytes below. 50 rather than
+   * something larger because the remote indexes every message into FTS as it applies the batch: on
+   * a small VPS a 200-message batch took long enough to blow Node's default fetch headers timeout,
+   * which stalls the whole sync. Smaller batches mean more round trips but ones that finish. */
   batchSize?: number;
+  /** Ceiling on the serialized body, which is what actually has to fit.
+   *
+   * Counting messages is not counting bytes, and verbatim content makes the two unrelated: a page
+   * of 50 was measured at 27.9 MB, of which two messages were 27.5 MB. That exceeded the remote's
+   * own 25 MB bodyLimit, so it could never be applied — and since the watermark only advances on
+   * success, every cycle rebuilt the identical oversized body and failed again. Cloudflare reported
+   * it as an HTTP/2 ENHANCE_YOUR_CALM, which reads like throttling rather than "too big". The queue
+   * stood still for five days with 20 839 messages behind it. */
+  maxBatchBytes?: number;
   /** Bounds a single POST. Without it a slow remote hangs on undici's default headers timeout and
    * the failure surfaces as an opaque UND_ERR_HEADERS_TIMEOUT minutes later. */
   requestTimeoutMs?: number;
@@ -27,12 +35,31 @@ export interface PushClientOptions {
  */
 export async function runPushCycle(db: Db, opts: PushClientOptions): Promise<void> {
   const batchSize = opts.batchSize ?? 50;
+  const maxBatchBytes = opts.maxBatchBytes ?? 8 * 1024 * 1024;
   const requestTimeoutMs = opts.requestTimeoutMs ?? 60_000;
   let cursor = db.getRemoteSyncState(opts.remoteUrl).lastPushedSeq;
 
   while (true) {
-    const { messages, maxSeq } = db.getMessagesAfterSeq(cursor, batchSize);
-    if (messages.length === 0) break;
+    const page = db.getMessagesAfterSeq(cursor, batchSize);
+    if (page.messages.length === 0) break;
+
+    // Trim the page to what will fit. The first message is always kept, even when it alone busts
+    // the ceiling: dropping it would lose content, and the whole point of this store is that
+    // nothing is summarised or discarded. An oversized single message is sent on its own, which is
+    // both the best chance of it going through and the only way the queue behind it can drain.
+    let bytes = 0;
+    let count = 0;
+    for (const message of page.messages) {
+      const size = JSON.stringify(message).length;
+      if (count > 0 && bytes + size > maxBatchBytes) break;
+      bytes += size;
+      count++;
+    }
+    const messages = page.messages.slice(0, count);
+    const maxSeq = page.seqs[count - 1];
+    if (count < page.messages.length) {
+      console.log(`sync-push: page trimmed to ${count}/${page.messages.length} messages (${(bytes / 1024 / 1024).toFixed(1)} Mo)`);
+    }
 
     // Projects are sent in full each batch (small, and upsertProject is a cheap idempotent
     // upsert) rather than tracked incrementally — simpler, and avoids a second watermark to keep

@@ -127,6 +127,33 @@ describe('runPushCycle', () => {
     expect(remoteMessages.map((m) => m.content)).toEqual(['message 0', 'message 1', 'message 2', 'message 3', 'message 4']);
   });
 
+  it('splits a page by weight, not by count, so one huge message cannot block the queue', async () => {
+    // The failure this prevents: a page of 50 weighed 27.9 MB, over the remote's 25 MB bodyLimit,
+    // so it could never apply; the watermark never moved, the identical body was rebuilt every
+    // cycle, and 20 839 messages sat behind it for five days.
+    localDb.insertMessage(message({ id: 'm1', hash: 'h1', content: 'x'.repeat(200_000) }));
+    localDb.insertMessage(message({ id: 'm2', hash: 'h2', content: 'petit' }));
+
+    // Small enough that the two cannot travel together, large enough that each fits alone.
+    await runPushCycle(localDb, { remoteUrl, remoteToken: REMOTE_TOKEN, maxBatchBytes: 250_000 });
+
+    expect(remoteDb.getMessagesForThread('t1')).toHaveLength(2);
+  });
+
+  it('sends an over-sized message on its own rather than dropping it or stalling', async () => {
+    // Nothing is ever discarded to make a batch fit — a verbatim store that silently skips the
+    // biggest messages is worse than one that is behind. It goes alone, and the rest drains.
+    localDb.insertMessage(message({ id: 'm1', hash: 'h1', content: 'y'.repeat(300_000) }));
+    localDb.insertMessage(message({ id: 'm2', hash: 'h2', content: 'suivant' }));
+
+    await runPushCycle(localDb, { remoteUrl, remoteToken: REMOTE_TOKEN, maxBatchBytes: 1_000 });
+
+    const contents = remoteDb.getMessagesForThread('t1').map((m) => m.content);
+    expect(contents).toHaveLength(2);
+    expect(contents[0]).toHaveLength(300_000);
+    expect(contents[1]).toBe('suivant');
+  });
+
   it('does not advance the watermark when the remote rejects the batch, so the next call retries from the same point', async () => {
     localDb.insertMessage(message({ id: 'm1', hash: 'h1' }));
 

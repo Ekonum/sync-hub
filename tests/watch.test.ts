@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/core/db.js';
 import { ProjectRegistry, pathToClaudeSlug } from '../src/core/registry.js';
-import { startWatching } from '../src/core/watch.js';
+import { startWatching, keepsDirectory } from '../src/core/watch.js';
 
 function line(role: 'user' | 'assistant', text: string, uuid: string, ts: string) {
   return JSON.stringify({
@@ -118,3 +118,35 @@ async function waitFor(check: () => boolean, timeoutMs = 15000): Promise<void> {
     await new Promise((r) => setTimeout(r, 50));
   }
 }
+
+describe('keepsDirectory — pruning what the watcher descends into', () => {
+  // chokidar v4 opens one handle per directory, so this predicate is what stands between the
+  // process and EMFILE: brain/ holds 4 870 directories for 48 transcripts, and watching all of
+  // them killed the daemon on a loop. Pruning is why it must answer for directories, not files.
+  const brain = '/Users/x/.gemini/antigravity/brain';
+
+  it('keeps the path leading to a transcript', () => {
+    expect(keepsDirectory('antigravity', brain, brain)).toBe(true);
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1`)).toBe(true);
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1/.system_generated`)).toBe(true);
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1/.system_generated/logs`)).toBe(true);
+  });
+
+  it('prunes the subtrees that hold no transcript', () => {
+    // These three are the bulk of the tree.
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1/scratch`)).toBe(false);
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1/.user_uploaded`)).toBe(false);
+    expect(keepsDirectory('antigravity', brain, `${brain}/session-1/.tempmediaStorage`)).toBe(false);
+    // Nothing below logs/ matters either.
+    expect(keepsDirectory('antigravity', brain, `${brain}/s/.system_generated/logs/sub`)).toBe(false);
+    // A lookalike one level off must not slip through.
+    expect(keepsDirectory('antigravity', brain, `${brain}/s/scratch/.system_generated`)).toBe(false);
+  });
+
+  it('leaves the other engine trees alone', () => {
+    // They are small — 43 and 45 directories — and their layout is not fixed the same way.
+    const cc = '/Users/x/.claude/projects';
+    expect(keepsDirectory('claude-code', cc, `${cc}/a/b/c/d`)).toBe(true);
+    expect(keepsDirectory('codex', '/Users/x/.codex/sessions', '/Users/x/.codex/sessions/2026/09/07')).toBe(true);
+  });
+});

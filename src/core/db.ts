@@ -1278,14 +1278,22 @@ export class Db {
 
   /** The next page of messages this instance hasn't pushed to a remote hub yet, ordered by
    * ingest_seq — see backfillIngestSeq's doc for why that column exists instead of rowid/timestamp.
-   * `maxSeq` is the watermark to pass back next call (0 unchanged when the page is empty). */
-  getMessagesAfterSeq(afterSeq: number, limit: number): { messages: Message[]; maxSeq: number } {
+   * `maxSeq` is the watermark to pass back next call (unchanged when the page is empty).
+   *
+   * `seqs` runs parallel to `messages`: the pusher may send fewer rows than it was given, because
+   * a page of 50 can weigh more than the remote accepts, and it then has to name a watermark that
+   * matches what it actually sent rather than what it read. */
+  getMessagesAfterSeq(
+    afterSeq: number,
+    limit: number,
+  ): { messages: Message[]; seqs: number[]; maxSeq: number } {
     const rows = this.raw
       .prepare('SELECT * FROM messages WHERE ingest_seq > ? ORDER BY ingest_seq ASC LIMIT ?')
       .all(afterSeq, limit) as any[];
     const messages = rows.map(rowToMessage);
+    const seqs = rows.map((r) => r.ingest_seq as number);
     const maxSeq = rows.length ? rows[rows.length - 1].ingest_seq : afterSeq;
-    return { messages, maxSeq };
+    return { messages, seqs, maxSeq };
   }
 
   // --- remote sync (core/sync-push-client.ts & core/sync-pull-client.ts) --------------------

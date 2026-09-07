@@ -1,5 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import { statSync } from 'node:fs';
+import { relative, sep } from 'node:path';
 import type { Db } from './db.js';
 import type { ProjectRegistry } from './registry.js';
 import * as claudeCode from './adapters/claude-code.js';
@@ -21,8 +22,8 @@ interface WatchOptions {
   codexRoots?: string[];
   antigravityRoots?: string[];
   /**
-   * Force the polling backend. Defaults to polling under vitest (deterministic, and fsevents
-   * proved flaky under concurrent workers) and to native fsevents everywhere else, where polling
+   * Force the polling backend. Defaults to polling under vitest (deterministic, and the native
+   * backend proved flaky under concurrent workers) and to fs.watch everywhere else, where polling
    * costs ~300× more CPU for the same result.
    */
   usePolling?: boolean;
@@ -38,6 +39,32 @@ interface WatchOptions {
  * shrink, a new inode — re-reads from the start, because an offset that no longer matches the
  * file silently skips content instead of failing loudly.
  */
+/**
+ * Which directories are worth descending into, per engine.
+ *
+ * chokidar v4 watches recursively by opening one handle per directory, so the size of the tree —
+ * not the number of transcripts — is what the process pays for. Antigravity's brain/ holds 4 870
+ * directories for 48 transcripts: every session keeps its scratch space, its uploads and its
+ * temporary media beside the log. Watching all of it exhausted the descriptor budget, the process
+ * died on EMFILE, launchd restarted it, and it died again — a loop in which the sync cycle never
+ * got the fifteen seconds it needs to run.
+ *
+ * Returning false here prunes the whole subtree, which is the point: the rule must describe the
+ * path *to* the transcript, not the transcript itself.
+ */
+export function keepsDirectory(engine: EngineType, root: string, dir: string): boolean {
+  if (dir === root) return true;
+  const rel = relative(root, dir);
+  if (rel.startsWith('..')) return false;
+  const parts = rel.split(sep);
+  if (engine !== 'antigravity') return true;
+  // brain/<session>/.system_generated/logs/transcript_full.jsonl, and nothing else.
+  if (parts.length === 1) return true;
+  if (parts.length === 2) return parts[1] === '.system_generated';
+  if (parts.length === 3) return parts[1] === '.system_generated' && parts[2] === 'logs';
+  return false;
+}
+
 function startEngineWatch(
   engine: EngineType,
   roots: string[],
@@ -91,17 +118,25 @@ function startEngineWatch(
   // 588 are .jsonl, the rest being Antigravity's per-session steps, scratch and uploads. Watching
   // them only to discard them later cost 85% of the watcher's work.
   //
-  // Polling is kept for tests, where the native fsevents backend proved unreliable under
-  // concurrent worker load (events never firing within any timeout), and it is deterministic.
-  // In production it is not "cheap enough" as this once assumed: measured on the real roots,
-  // polling every 300ms burns 30.7% of a core continuously, against 0.1% for fsevents — some
-  // 17 000 stat() calls a second, forever, on an idle machine.
+  // Polling is kept for tests, where the native backend proved unreliable under concurrent
+  // worker load (events never firing within any timeout), and it is deterministic. In production
+  // it is not "cheap enough" as this once assumed: measured on the real roots, polling every
+  // 300ms burns 30.7% of a core continuously, against 0.1% natively — some 17 000 stat() calls a
+  // second, forever, on an idle machine.
+  //
+  // "Natively" means fs.watch, not the fsevents module: chokidar v4 dropped it. That is why the
+  // cost of this watcher is one descriptor per *directory* rather than one per tree, and why
+  // `ignored` above has to prune directories rather than merely filter files.
   const usePolling = opts.usePolling ?? !!process.env.VITEST;
   const watcher = chokidar.watch(roots, {
     ignoreInitial: true,
     // stats is undefined until chokidar has stat'd the entry; never ignore then, or the entry is
-    // dropped before it can be identified. Directories must stay watched to be descended into.
-    ignored: (path, stats) => !!stats?.isFile() && !path.endsWith('.jsonl'),
+    // dropped before it can be identified.
+    ignored: (path, stats) => {
+      if (!stats) return false;
+      if (stats.isFile()) return !path.endsWith('.jsonl');
+      return !roots.some((root) => keepsDirectory(engine, root, path));
+    },
     ...(usePolling
       ? { usePolling: true, interval: 300, awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 } }
       : { usePolling: false, awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 } }),
