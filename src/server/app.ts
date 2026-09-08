@@ -1183,7 +1183,13 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const targetProject = db.getProject(req.body.projectId);
     if (!targetProject) return reply.code(400).send({ error: 'unknown_target_project' });
 
-    if (thread.sourceRef) {
+    // Teaching the registry is triage, not correction. Classifying a thread that was never sorted
+    // says "everything from this folder belongs here", which is the point of the unassigned queue.
+    // Moving a thread that already had a project says only that this one was filed wrong — one
+    // session of an Odoo folder that turned out to be about another client. Repointing the folder
+    // on that basis would drag every future session there with it.
+    const wasUnassigned = thread.projectId === UNASSIGNED_PROJECT_ID;
+    if (thread.sourceRef && wasUnassigned) {
       const kind = thread.originEngine === 'claude-code' ? 'claudeSlugs' : 'codexCwds';
       registry.assign(targetProject.id, kind, thread.sourceRef);
     }

@@ -251,17 +251,28 @@ function UserCard({ message }: { message: Message }) {
   );
 }
 
-/** A system-role notice (e.g. Antigravity's <SYSTEM_MESSAGE> wrapper, or a background-task
- * notification) — real content, but injected rather than typed by anyone, so it's folded by
- * default like the reasoning trail rather than shown inline at full height. */
-function SystemNoticeBlock({ message, showMeta }: { message: Message; showMeta: boolean }) {
+/**
+ * Content that arrived in the transcript without anyone typing it.
+ *
+ * Two kinds land here. A system-role notice — Antigravity's <SYSTEM_MESSAGE> wrapper, a
+ * background-task notification. And a turn in the person's own slot that the tool filled: a skill
+ * body, the caveat banner before a resumed session, an image placeholder. The second kind is the
+ * one that misled, because it looked exactly like a prompt: an 11 687-character design brief sat
+ * in this store presented as something Robin had written.
+ *
+ * Kept in full — it is part of what was actually sent — but folded and set apart, so the eye
+ * skips it while reading the conversation and can still open it.
+ */
+function SystemNoticeBlock({ message, showMeta, label }: { message: Message; showMeta: boolean; label?: string }) {
+  const chars = message.content.length.toLocaleString('fr-FR');
   return (
     <div>
       {showMeta && <Meta sourceEngine={message.sourceEngine} timestamp={message.timestamp} />}
-      <details className="rounded-xl border border-border bg-muted/60 px-4 py-2 text-sm text-muted-foreground">
+      <details className="rounded-xl border border-dashed border-border bg-muted/40 px-4 py-2 text-sm text-muted-foreground">
         <summary className="flex cursor-pointer select-none items-center gap-2">
           <Info size={13} className="shrink-0" />
-          Message système
+          {label ?? 'Message système'}
+          <span className="ml-auto shrink-0 text-muted-foreground/70">{chars} caractères</span>
         </summary>
         <div className="mt-2">
           <MarkdownRenderer text={message.content} />
@@ -335,6 +346,9 @@ function RenderedItem({
       </div>
     );
   }
+  // Checked before the role: an injected turn *is* role "user", which is the whole problem.
+  if (item.message.isInjected)
+    return <SystemNoticeBlock message={item.message} showMeta={false} label="Injecté par l'outil, pas saisi" />;
   if (item.message.role === 'user') return <UserCard message={item.message} />;
   if (item.message.role === 'system') return <SystemNoticeBlock message={item.message} showMeta={showMeta} />;
   return <AssistantTurn message={item.message} previousTimestamp={previousTimestamp} showMeta={showMeta} />;
@@ -348,8 +362,15 @@ function itemEngine(item: RenderItem): EngineType {
   return item.kind === 'toolGroup' ? item.sourceEngine : item.message.sourceEngine;
 }
 
+/**
+ * A turn the person actually took — which is what a stamp above it marks, and what resets the
+ * "same speaker, no need to repeat the stamp" run below.
+ *
+ * An injected turn has role "user" and is neither: it gets folded away, and giving it a stamp of
+ * its own put a header on the page with nothing under it.
+ */
 function isUserItem(item: RenderItem): boolean {
-  return item.kind === 'message' && item.message.role === 'user';
+  return item.kind === 'message' && item.message.role === 'user' && !item.message.isInjected;
 }
 
 /** Whether this item still needs its own "engine · timestamp" line. Repeating it above every
@@ -398,20 +419,37 @@ function shouldShowMeta(item: RenderItem, previous: RenderItem | undefined): boo
 
 const actionButtonClass = 'flex shrink-0 items-center gap-2 rounded-xl border border-border px-2 py-2 text-sm text-muted-foreground hover:bg-muted';
 
-/** Assign-to-project control, only rendered when the thread has never been classified — the
- * dashboard's "Non affecté" triage action, available directly from the thread itself too. */
-function AssignControl({ allProjects, onAssign }: { allProjects: Project[]; onAssign: (projectId: string) => void }) {
+/**
+ * Files a conversation into a project, or moves one already filed.
+ *
+ * These were one action all along; only the unsorted case was ever offered, so a thread that had
+ * landed in the wrong project could not be corrected from the interface at all. The current
+ * project is preselected and excluded from the choices, so the control says where the thread is
+ * and offers only somewhere else.
+ */
+function AssignControl({
+  allProjects,
+  currentProjectId,
+  onAssign,
+}: {
+  allProjects: Project[];
+  currentProjectId?: string;
+  onAssign: (projectId: string) => void;
+}) {
   const [target, setTarget] = useState('');
+  const unsorted = !currentProjectId || currentProjectId === UNASSIGNED_PROJECT_ID;
+  const current = allProjects.find((p) => p.id === currentProjectId);
   return (
     <div className="flex shrink-0 items-center gap-2">
       <select
         value={target}
         onChange={(e) => setTarget(e.target.value)}
         className="rounded-xl border border-border bg-card px-2 py-2 text-sm text-foreground"
+        title={current ? `Actuellement dans « ${current.name} »` : 'Ce fil n\'est rattaché à aucun projet'}
       >
-        <option value="">Classer dans…</option>
+        <option value="">{unsorted ? 'Classer dans…' : `Déplacer depuis « ${current?.name ?? '?'} »…`}</option>
         {allProjects
-          .filter((p) => p.id !== UNASSIGNED_PROJECT_ID)
+          .filter((p) => p.id !== UNASSIGNED_PROJECT_ID && p.id !== currentProjectId)
           .map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -592,16 +630,18 @@ export function ChatView({
           Pour reprendre ce fil ailleurs : demande à l'outil d'appeler <code className="rounded-xl bg-muted px-2">get_thread</code> avec cet id.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {thread?.projectId === UNASSIGNED_PROJECT_ID && (
-            <AssignControl
-              allProjects={allProjects}
-              onAssign={async (projectId) => {
-                await api.assignThread(threadId, projectId);
-                setThread((t) => (t ? { ...t, projectId } : t));
-                onChanged();
-              }}
-            />
-          )}
+          {/* Offered whatever the thread's current project is. Filing an unsorted conversation and
+              moving a misfiled one are the same gesture to whoever is doing it; only the first one
+              also teaches the registry, which the server decides. */}
+          <AssignControl
+            allProjects={allProjects}
+            currentProjectId={thread?.projectId}
+            onAssign={async (projectId) => {
+              await api.assignThread(threadId, projectId);
+              setThread((t) => (t ? { ...t, projectId } : t));
+              onChanged();
+            }}
+          />
           <ArchiveButton
             onConfirm={async () => {
               await api.archiveThread(threadId);

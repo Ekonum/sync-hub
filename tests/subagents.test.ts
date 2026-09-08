@@ -95,3 +95,44 @@ describe('sous-agents', () => {
     expect(withSub.totalThinkingMs).toBe(withoutSub.totalThinkingMs);
   });
 });
+
+describe('déplacer un fil entre projets', () => {
+  it('moves the thread and its messages, without repointing the whole folder', async () => {
+    // Filing an unsorted thread teaches the registry that a folder belongs to a project. Moving a
+    // misfiled one must not: one Odoo session that turned out to concern another client should
+    // not drag every future session of that folder along with it.
+    const { createApp } = await import('../src/server/app.js');
+    const now = '2026-09-08T10:00:00.000Z';
+    // The thread has to start in a real project, or this exercises triage rather than a move.
+    db.upsertProject({
+      id: 'proj-odoo', name: 'Odoo', canonicalPath: join(dir, 'odoo'),
+      aliases: { paths: [], claudeSlugs: [SLUG], codexCwds: [] }, createdAt: now, lastActiveAt: now,
+    });
+    db.upsertProject({
+      id: 'proj-autre', name: 'Autre client', canonicalPath: join(dir, 'autre'),
+      aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now,
+    });
+    claudeCode.ingestAll(db, registry, root);
+
+    expect(db.getThread(PARENT)!.projectId).toBe('proj-odoo');
+    // Read the alias lists straight off the projects, so this asserts on real state.
+    const aliasesBefore = JSON.stringify(db.getProjects().map((p) => [p.id, p.aliases.claudeSlugs]));
+
+    const app = await createApp({
+      db, registry,
+      watchHandle: { isActive: () => true, ready: () => Promise.resolve(), close: async () => {} },
+    } as never);
+    const res = await app.inject({ method: 'POST', url: `/api/threads/${PARENT}/assign`, payload: { projectId: 'proj-autre' } });
+    expect(res.statusCode).toBe(200);
+
+    expect(db.getThread(PARENT)!.projectId).toBe('proj-autre');
+    // The messages follow, or the project's costs and timesheet stay where the thread no longer is.
+    const stray = db.raw
+      .prepare("SELECT count(*) c FROM messages WHERE thread_id = ? AND project_id != 'proj-autre'")
+      .get(PARENT) as { c: number };
+    expect(stray.c).toBe(0);
+    // The folder still points where it did.
+    expect(JSON.stringify(db.getProjects().map((p) => [p.id, p.aliases.claudeSlugs]))).toBe(aliasesBefore);
+    await app.close();
+  });
+});

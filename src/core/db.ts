@@ -329,6 +329,9 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   // be ingested after the child (files arrive in directory order, not causal order), and a
   // foreign key would reject the child rather than wait.
   { table: 'threads', column: 'parent_thread_id', definition: 'TEXT' },
+  // Content the tool put in the person's turn rather than the person: a skill body, a caveat
+  // banner, an image placeholder. Kept verbatim like everything else, but not their prompt.
+  { table: 'messages', column: 'is_injected', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -645,6 +648,9 @@ export class Db {
       // that took no human minutes at all — and would do it invisibly, since a sub-agent's
       // instruction reads exactly like a prompt.
       'th.parent_thread_id IS NULL',
+      // Same reasoning, one level down: an injected skill body sits in the person's turn and
+      // would otherwise be billed as eleven thousand characters somebody typed.
+      'm.is_injected = 0',
     ];
     const params: unknown[] = [];
     if (scope.threadId) {
@@ -1075,7 +1081,7 @@ export class Db {
     const rows = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
-                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user' AND m.is_injected = 0) AS prompt_count
          FROM threads t WHERE ${where} ORDER BY t.updated_at DESC${page}`,
       )
       .all(...(opts.limit != null ? [projectId, opts.limit, opts.offset ?? 0] : [projectId])) as any[];
@@ -1097,7 +1103,7 @@ export class Db {
     const row = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
-                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user' AND m.is_injected = 0) AS prompt_count
          FROM threads t WHERE t.id = ?`,
       )
       .get(id) as any;
@@ -1112,7 +1118,7 @@ export class Db {
     const rows = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
-                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user' AND m.is_injected = 0) AS prompt_count
          FROM threads t WHERE t.id IN (${placeholders})`,
       )
       .all(...ids) as any[];
@@ -1244,9 +1250,9 @@ export class Db {
       this.raw
         .prepare(
           `INSERT INTO messages
-             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage, estimated_tokens, ingest_seq)
+             (id, thread_id, project_id, source_engine, role, content, thought, tool_calls, tool_results, attachments, timestamp, sequence, hash, metadata, model, usage, estimated_tokens, ingest_seq, is_injected)
            VALUES
-             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage, @estimatedTokens, @ingestSeq)`,
+             (@id, @threadId, @projectId, @sourceEngine, @role, @content, @thought, @toolCalls, @toolResults, @attachments, @timestamp, @sequence, @hash, @metadata, @model, @usage, @estimatedTokens, @ingestSeq, @isInjected)`,
         )
         .run({
           id: message.id,
@@ -1270,6 +1276,7 @@ export class Db {
           // the id-conflict re-parse UPDATE branch below, so an existing message's position in the
           // remote-push watermark ordering never moves once assigned (see backfillIngestSeq's doc).
           ingestSeq: candidateSeq,
+          isInjected: message.isInjected ? 1 : 0,
         });
       this.nextIngestSeq = candidateSeq;
       this.syncMessageFts(message.id, message.content);
@@ -1316,7 +1323,7 @@ export class Db {
                SET thread_id = @threadId, project_id = @projectId, source_engine = @sourceEngine, role = @role,
                    content = @content, thought = @thought, tool_calls = @toolCalls, tool_results = @toolResults,
                    attachments = @attachments, timestamp = @timestamp, sequence = @sequence, hash = @hash, metadata = @metadata,
-                   model = @model, usage = @usage, estimated_tokens = @estimatedTokens
+                   model = @model, usage = @usage, estimated_tokens = @estimatedTokens, is_injected = @isInjected
              WHERE id = @id`,
           )
           .run({
@@ -1337,6 +1344,7 @@ export class Db {
             model: message.model ?? null,
             usage: message.usage ? JSON.stringify(message.usage) : null,
             estimatedTokens: message.estimatedTokens ?? null,
+            isInjected: message.isInjected ? 1 : 0,
           });
         this.syncMessageFts(message.id, message.content);
         return true;
@@ -2062,7 +2070,7 @@ export class Db {
     const rows = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
-                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user' AND m.is_injected = 0) AS prompt_count
          FROM threads t WHERE t.parent_thread_id = ? ORDER BY t.created_at ASC`,
       )
       .all(parentThreadId) as any[];
@@ -2745,6 +2753,7 @@ function rowToThread(row: any): Thread {
 function rowToMessage(row: any): Message {
   return {
     id: row.id,
+    isInjected: row.is_injected ? true : undefined,
     threadId: row.thread_id,
     projectId: row.project_id,
     sourceEngine: row.source_engine,

@@ -118,6 +118,8 @@ export function discoverSessionFiles(root: string = CLAUDE_CODE_STORAGE_ROOT): S
 interface ParsedLine {
   role: MessageRole;
   content: string;
+  /** True when Claude Code marked the event `isMeta` — see the `user` branch of parseLine. */
+  isInjected?: boolean;
   thought?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
@@ -168,8 +170,14 @@ export function parseLine(rawLine: string): ParsedLine | null {
   const uuid = event.uuid ?? createHash('sha256').update(line).digest('hex').slice(0, 16);
 
   if (typeof content === 'string') {
-    // A plain human message.
-    return { role: 'user', content, timestamp, uuid };
+    // A turn in the person's own slot — which is not the same as a turn the person wrote.
+    //
+    // Claude Code delivers injected material this way too: a skill body, the caveat banner before
+    // a resumed session, an image placeholder. It marks each one `isMeta`, and that flag is
+    // reliable here — across this corpus it covers 58 events, every one of them injected, and no
+    // typed prompt carries it. Without it, an 11 687-character skill sat in the transcript looking
+    // exactly like something Robin had written.
+    return { role: 'user', content, timestamp, uuid, isInjected: event.isMeta === true };
   }
 
   if (!Array.isArray(content)) return null;
@@ -341,6 +349,7 @@ export function ingestSessionFile(
       hash,
       model: parsed.model,
       usage: parsed.usage,
+      isInjected: parsed.isInjected,
     };
     if (db.insertMessage(message)) inserted++;
     latestTimestamp = parsed.timestamp;

@@ -48,6 +48,14 @@ export interface Message {
   sourceEngine: EngineType;
   role: MessageRole;
   content: string;
+  /**
+   * The turn carries content the tool put there, not what the person typed: a skill body, a
+   * caveat banner, an image placeholder, a resumed-session preamble. Stored verbatim like
+   * everything else — it is part of what was sent, and dropping it would misrepresent the
+   * exchange — but it is not a prompt, so it is not counted as one, not billed as typing, and
+   * not shown as though somebody wrote it.
+   */
+  isInjected?: boolean;
   thought?: string;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
