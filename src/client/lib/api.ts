@@ -141,6 +141,11 @@ export const api = {
   stats: () => jsonFetch<SyncStats>('/api/stats'),
   projects: () => jsonFetch<Project[]>('/api/projects'),
   threads: (projectId: string) => jsonFetch<Thread[]>(`/api/projects/${projectId}/threads`),
+  /** A page of a project's conversations, newest first — what the tree asks for. */
+  threadPage: (projectId: string, page: { offset: number; limit: number }) =>
+    jsonFetch<{ threads: Thread[]; total: number }>(
+      `/api/projects/${projectId}/threads?offset=${page.offset}&limit=${page.limit}`,
+    ),
   thread: (threadId: string) => jsonFetch<Thread>(`/api/threads/${threadId}`),
   subThreads: (threadId: string) => jsonFetch<Thread[]>(`/api/threads/${threadId}/subthreads`),
   memories: (projectId: string) => jsonFetch<Memory[]>(`/api/projects/${projectId}/memories`),

@@ -659,17 +659,39 @@ function ProjectNode({
 } & Omit<ProjectTreeProps, 'projects' | 'focusThreadId' | 'onFocusHandled'>) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ProjectChildren | null>(null);
+  const [threadTotal, setThreadTotal] = useState(0);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
   const [activePanel, setActivePanel] = useState<'rename' | 'category' | 'merge' | 'archive' | 'delete' | 'export' | 'share' | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const threadRefs = useRef(new Map<string, HTMLDivElement>());
   const isFocusTarget = !!focusProjectId && project.id === focusProjectId;
 
+  // A first page, not the lot: two projects here hold 3 527 and 961 conversations, and opening
+  // either used to send every one of them down the wire and mount a row for each.
+  const THREAD_PAGE = 20;
   useEffect(() => {
     if (!expanded) return;
-    Promise.all([api.threads(project.id), api.memories(project.id), api.artifacts(project.id)]).then(([threads, memories, artifacts]) =>
-      setChildren({ threads, memories, artifacts }),
-    );
+    Promise.all([
+      api.threadPage(project.id, { offset: 0, limit: THREAD_PAGE }),
+      api.memories(project.id),
+      api.artifacts(project.id),
+    ]).then(([page, memories, artifacts]) => {
+      setChildren({ threads: page.threads, memories, artifacts });
+      setThreadTotal(page.total);
+    });
   }, [expanded, project.id, refreshToken]);
+
+  async function loadMoreThreads(): Promise<void> {
+    if (!children || loadingMoreThreads) return;
+    setLoadingMoreThreads(true);
+    try {
+      const page = await api.threadPage(project.id, { offset: children.threads.length, limit: THREAD_PAGE });
+      setChildren((prev) => (prev ? { ...prev, threads: [...prev.threads, ...page.threads] } : prev));
+      setThreadTotal(page.total);
+    } finally {
+      setLoadingMoreThreads(false);
+    }
+  }
 
   // Opened from search (or anywhere else outside the tree): expand this project and scroll it
   // into view, then — once its threads are loaded — scroll to the specific thread row.
@@ -812,6 +834,17 @@ function ProjectNode({
               />
             </div>
           ))}
+          {children.threads.length < threadTotal && (
+            <button
+              onClick={loadMoreThreads}
+              disabled={loadingMoreThreads}
+              className="w-full rounded-xl px-2 py-2 text-left text-sm text-muted-foreground underline underline-offset-2 hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              {loadingMoreThreads
+                ? 'Chargement…'
+                : `Afficher ${Math.min(THREAD_PAGE, threadTotal - children.threads.length)} conversations de plus (${threadTotal - children.threads.length} restantes)`}
+            </button>
+          )}
           {children.memories.map((m) => (
             <button
               key={m.id}

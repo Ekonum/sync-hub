@@ -994,11 +994,25 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return project;
   });
 
-  app.get<{ Params: { id: string }; Querystring: { includeArchived?: string } }>('/api/projects/:id/threads', async (req, reply) => {
-    if (denyIfProjectHidden(req, reply, req.params.id)) return;
-    const threads = db.getThreadsForProject(req.params.id);
-    return req.query.includeArchived === 'true' ? threads : threads.filter((t) => t.status !== 'archived');
-  });
+  /**
+   * A project's conversations, newest first, optionally a page at a time.
+   *
+   * Paged because two projects here hold 3 527 and 961 threads: opening either sent the lot down
+   * the wire and mounted every row, for a sidebar that shows a dozen. Without `limit` it still
+   * answers with everything, which is what an export needs.
+   */
+  app.get<{ Params: { id: string }; Querystring: { includeArchived?: string; offset?: string; limit?: string } }>(
+    '/api/projects/:id/threads',
+    async (req, reply) => {
+      if (denyIfProjectHidden(req, reply, req.params.id)) return;
+      const includeArchived = req.query.includeArchived === 'true';
+      const limit = req.query.limit ? Math.min(Math.max(Number(req.query.limit) || 1, 1), 500) : undefined;
+      const offset = Math.max(Number(req.query.offset ?? 0) || 0, 0);
+      const threads = db.getThreadsForProject(req.params.id, { includeArchived, limit, offset });
+      if (limit == null) return threads;
+      return { threads, total: db.countVisibleThreads(req.params.id, includeArchived) };
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/api/projects/:id/memories', async (req, reply) => {
     if (denyIfProjectHidden(req, reply, req.params.id)) return;

@@ -337,6 +337,9 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'remote_sync_state', column: 'last_pulled_at', definition: 'TEXT' },
 ];
 
+/** Bumped whenever core/hash.ts changes what it keys on, so every stored hash is rewritten once. */
+const MESSAGE_HASH_VERSION = '2-thread-timestamp';
+
 const DEFAULT_CATEGORIES = ['ekonum', 'client', 'perso'];
 
 
@@ -423,11 +426,22 @@ export class Db {
    * whole table builds a WAL of hundreds of megabytes and starts from scratch if the process dies.
    */
   private migrateMessageHashes(): void {
-    const probe = this.raw.prepare('SELECT * FROM messages LIMIT 1').get() as any;
-    if (!probe) return;
-    if (probe.hash === computeMessageHash(rowToMessage(probe))) return; // already migrated
+    // A marker, not a probe on one row. Checking whether a single arbitrary message already
+    // matches was wrong twice over: a corpus half-converted by an earlier interrupted run looks
+    // finished if the row sampled happens to be one of the converted ones — which is exactly what
+    // happened, leaving the rest to be rewritten one at a time through insertMessage's slow path.
+    const marker = this.raw
+      .prepare("SELECT value FROM user_settings WHERE user_id = '__schema__' AND key = 'message_hash_version'")
+      .get() as { value: string | null } | undefined;
+    if (marker?.value === MESSAGE_HASH_VERSION) return;
+    if (!this.raw.prepare('SELECT 1 FROM messages LIMIT 1').get()) {
+      this.markMessageHashVersion();
+      return; // nothing stored yet, so nothing to convert
+    }
 
-    const read = this.raw.prepare('SELECT * FROM messages WHERE rowid > ? ORDER BY rowid LIMIT 2000');
+    // `rowid, *`, not `*`: SQLite does not include rowid in a wildcard, so paging on it silently
+    // read undefined after the first batch and the loop ended having converted 2 000 rows.
+    const read = this.raw.prepare('SELECT rowid, * FROM messages WHERE rowid > ? ORDER BY rowid LIMIT 2000');
     const write = this.raw.prepare('UPDATE messages SET hash = ? WHERE rowid = ?');
     let cursor = 0;
     let done = 0;
@@ -454,7 +468,17 @@ export class Db {
         }
       })();
     }
+    this.markMessageHashVersion();
     console.log(`sync-hub: ${done} empreintes de messages recalculées${collisions ? ` (${collisions} collisions laissées en l'état)` : ''}.`);
+  }
+
+  private markMessageHashVersion(): void {
+    this.raw
+      .prepare(
+        `INSERT INTO user_settings (user_id, key, value) VALUES ('__schema__', 'message_hash_version', ?)
+         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(MESSAGE_HASH_VERSION);
   }
 
   /**
@@ -1043,15 +1067,30 @@ export class Db {
    * not a conversation anyone had. It is reached through its parent instead. `getSubThreads` below
    * is how the parent shows them.
    */
-  getThreadsForProject(projectId: string): Thread[] {
+  getThreadsForProject(projectId: string, opts: { includeArchived?: boolean; offset?: number; limit?: number } = {}): Thread[] {
+    // Archived filtered here rather than by the caller: "the twenty most recent" has to mean the
+    // twenty most recent of what will actually be shown, or a page comes back half empty.
+    const where = `t.project_id = ? AND t.parent_thread_id IS NULL${opts.includeArchived ? '' : " AND t.status != 'archived'"}`;
+    const page = opts.limit != null ? ' LIMIT ? OFFSET ?' : '';
     const rows = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
                 (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
-         FROM threads t WHERE t.project_id = ? AND t.parent_thread_id IS NULL ORDER BY t.updated_at DESC`,
+         FROM threads t WHERE ${where} ORDER BY t.updated_at DESC${page}`,
       )
-      .all(projectId) as any[];
+      .all(...(opts.limit != null ? [projectId, opts.limit, opts.offset ?? 0] : [projectId])) as any[];
     return rows.map(rowToThread);
+  }
+
+  /** How many threads a project would show — what the paged list is counting towards. */
+  countVisibleThreads(projectId: string, includeArchived = false): number {
+    const row = this.raw
+      .prepare(
+        `SELECT COUNT(*) AS n FROM threads
+         WHERE project_id = ? AND parent_thread_id IS NULL${includeArchived ? '' : " AND status != 'archived'"}`,
+      )
+      .get(projectId) as any;
+    return row?.n ?? 0;
   }
 
   getThread(id: string): Thread | undefined {
