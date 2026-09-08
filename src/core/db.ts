@@ -335,6 +335,9 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   // A secret was taken out of this message. The source file still contains it, so a re-read
   // must not be allowed to put it back — see insertMessage's id-conflict branch.
   { table: 'messages', column: 'redacted', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // The row this message occupies in messages_fts. Deleting by message_id scans the whole
+  // index — the column is UNINDEXED, as it must be — while rowid is the index's own key.
+  { table: 'messages', column: 'fts_rowid', definition: 'INTEGER' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -415,6 +418,7 @@ export class Db {
     this.backfillIngestSeq();
     this.migrateMessageHashes();
     this.markExistingRedactions();
+    this.backfillFtsRowids();
   }
 
   /**
@@ -496,6 +500,26 @@ export class Db {
       )
       .run().changes;
     if (changed > 0) console.log(`sync-hub: ${changed} messages expurgés protégés d'une réécriture.`);
+  }
+
+  /**
+   * Records, once, which row of the search index each message occupies.
+   *
+   * Read from the index in one pass rather than looked up per message: the lookup is the very scan
+   * this exists to avoid, so doing it 223 000 times to save doing it 223 000 times would be a poor
+   * trade. Rows the index does not cover simply keep a null and fall back to the slow delete.
+   */
+  private backfillFtsRowids(): void {
+    const pending = this.raw.prepare('SELECT 1 FROM messages WHERE fts_rowid IS NULL LIMIT 1').get();
+    if (!pending) return;
+
+    const update = this.raw.prepare('UPDATE messages SET fts_rowid = ? WHERE id = ? AND fts_rowid IS NULL');
+    let done = 0;
+    const rows = this.raw.prepare('SELECT rowid, message_id FROM messages_fts').all() as Array<{ rowid: number; message_id: string }>;
+    this.raw.transaction(() => {
+      for (const row of rows) done += update.run(row.rowid, row.message_id).changes;
+    })();
+    if (done > 0) console.log(`sync-hub: ${done} messages reliés à leur ligne d'index.`);
   }
 
   private markMessageHashVersion(): void {
@@ -1423,11 +1447,29 @@ export class Db {
    * a row really is there to replace, pays for the delete.
    */
   private addMessageFts(id: string, content: string): void {
-    this.raw.prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)').run(content, id);
+    const { lastInsertRowid } = this.raw
+      .prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)')
+      .run(content, id);
+    // Remembered so the next delete is a seek rather than a walk of the whole index.
+    this.raw.prepare('UPDATE messages SET fts_rowid = ? WHERE id = ?').run(Number(lastInsertRowid), id);
   }
 
+  /**
+   * Replaces a message's row in the search index.
+   *
+   * Deletes by the index's own rowid, kept on the message. Deleting by message_id instead means a
+   * full scan of the index every time, and this is called for every message that comes back from
+   * its source file changed — which on this store was 37 turns out of 104 in a single thread. At
+   * 223 000 indexed rows that turned a rescan into forty minutes of one core.
+   */
   private syncMessageFts(id: string, content: string): void {
-    this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+    const row = this.raw.prepare('SELECT fts_rowid FROM messages WHERE id = ?').get(id) as any;
+    if (row?.fts_rowid != null) {
+      this.raw.prepare('DELETE FROM messages_fts WHERE rowid = ?').run(row.fts_rowid);
+    } else {
+      // Only for a row that predates the column and has not been reindexed yet.
+      this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
+    }
     this.addMessageFts(id, content);
   }
 
