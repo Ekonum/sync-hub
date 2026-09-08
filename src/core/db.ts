@@ -1328,7 +1328,7 @@ export class Db {
           isInjected: message.isInjected ? 1 : 0,
         });
       this.nextIngestSeq = candidateSeq;
-      this.syncMessageFts(message.id, message.content);
+      this.addMessageFts(message.id, message.content);
       return true;
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.hash')) {
@@ -1378,10 +1378,25 @@ export class Db {
     }
   }
 
-  /** Standalone (non-"external content") FTS5 index, so kept in sync manually here rather than via triggers — delete-then-insert is simplest and correct for both a fresh row and an update-in-place. */
+  /**
+   * Standalone (non-"external content") FTS5 index, kept in sync by hand rather than by triggers.
+   *
+   * The delete is the expensive half, and it is why this is split. `message_id` is UNINDEXED, as
+   * it must be — it is an identifier, not something to search — so `DELETE ... WHERE message_id`
+   * has nothing to seek on and walks the entire index. Profiling a restart put essentially the
+   * whole scan inside fts5NextMethod: every newly ingested message was scanning 200 000 rows to
+   * delete a row that did not exist yet.
+   *
+   * A fresh insert has nothing to remove, so it calls addMessageFts. Only an update-in-place, where
+   * a row really is there to replace, pays for the delete.
+   */
+  private addMessageFts(id: string, content: string): void {
+    this.raw.prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)').run(content, id);
+  }
+
   private syncMessageFts(id: string, content: string): void {
     this.raw.prepare('DELETE FROM messages_fts WHERE message_id = ?').run(id);
-    this.raw.prepare('INSERT INTO messages_fts (content, message_id) VALUES (?, ?)').run(content, id);
+    this.addMessageFts(id, content);
   }
 
   getMessagesForThread(threadId: string, page?: { offset: number; limit: number }): Message[] {
@@ -1398,6 +1413,15 @@ export class Db {
     return rows.map(rowToMessage);
   }
 
+  /**
+   * How many messages a thread holds.
+   *
+   * Every adapter picks its next sequence number from this. They used to call
+   * getMessagesForThread().length instead, which materialises every message of the thread —
+   * content included — once per file on every scan: on a thread of twelve thousand messages, that
+   * is hundreds of megabytes allocated to read one integer, and it is what kept the dashboard
+   * unreachable for minutes after a restart.
+   */
   countMessagesForThread(threadId: string): number {
     const row = this.raw.prepare('SELECT COUNT(*) AS n FROM messages WHERE thread_id = ?').get(threadId) as { n: number };
     return row.n;

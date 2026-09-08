@@ -194,7 +194,7 @@ export function ingestSessionFile(
     } as Thread);
   }
 
-  let sequence = existingThread ? db.getMessagesForThread(ref.sessionId).length : 0;
+  let sequence = existingThread ? db.countMessagesForThread(ref.sessionId) : 0;
   let firstUserContent: string | undefined;
   let inserted = 0;
   let latestTimestamp = existingThread?.updatedAt;

@@ -301,7 +301,7 @@ export function ingestSessionFile(
     existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID
       ? existingThread.projectId
       : (parentProjectId && parentProjectId !== UNASSIGNED_PROJECT_ID ? parentProjectId : defaultProjectId);
-  let sequence = existingThread ? db.getMessagesForThread(ref.sessionId).length : 0;
+  let sequence = existingThread ? db.countMessagesForThread(ref.sessionId) : 0;
   let firstUserContent: string | undefined;
   let inserted = 0;
   let latestTimestamp = existingThread?.updatedAt;

@@ -383,7 +383,7 @@ export function ingestSessionFile(
   const lines = body.split('\n');
   const parsedLines = mergeReasoningIntoFollowingMessage(parseLinesWithUsage(lines));
 
-  let sequence = existingThread ? db.getMessagesForThread(header.sessionId).length : 0;
+  let sequence = existingThread ? db.countMessagesForThread(header.sessionId) : 0;
   let firstUserContent: string | undefined;
   let inserted = 0;
   let latestTimestamp = existingThread?.updatedAt ?? header.createdAt;
