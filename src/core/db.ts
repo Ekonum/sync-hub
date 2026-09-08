@@ -1286,7 +1286,15 @@ export class Db {
         if (message.model || message.usage || message.estimatedTokens != null) {
           this.raw
             .prepare(
-              'UPDATE messages SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage), estimated_tokens = COALESCE(estimated_tokens, @estimatedTokens) WHERE hash = @hash',
+              // The WHERE clause is not decoration. COALESCE alone made this a no-op that still
+              // wrote: every already-complete message was rewritten, row and WAL, on every scan of
+              // every file — and a scan runs at each daemon start. Restricting it to rows actually
+              // missing something turns a full pass over the corpus into almost no writes at all.
+              `UPDATE messages
+                  SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage),
+                      estimated_tokens = COALESCE(estimated_tokens, @estimatedTokens)
+                WHERE hash = @hash
+                  AND (model IS NULL OR usage IS NULL OR estimated_tokens IS NULL)`,
             )
             .run({
               hash: message.hash,
