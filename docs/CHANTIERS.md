@@ -149,32 +149,38 @@ Hôtes annoncés comme le supportant : **Claude (web et bureau)**, **ChatGPT**, 
 (Insiders), **Goose**. Microsoft, JetBrains, AWS et Google DeepMind se sont dits intéressés sans
 confirmer d'implémentation.
 
-### Ce que ça donne pour les trois outils de Robin
+### Ce que ça donne pour les outils de Robin
 
-- **ChatGPT — oui, directement.** C'est l'hôte de référence de cette architecture.
-- **Claude Code — non, et c'est structurel.** Vérifié sur le binaire installé : aucune trace de
-  `ui://` ni de `resourceUri`. C'est un programme de terminal, il n'a pas d'iframe. Sa seule
-  surface d'affichage continue est la **ligne d'état** (`statusLine` dans les réglages, présent
-  30 fois dans le binaire) : du texte, rafraîchi, suffisant pour « 3 fils liés · dernier écho il y
-  a 12 min », pas pour un bouton. À noter : *Claude* (web et bureau) supporte MCP Apps, mais c'est
-  une autre application que *Claude Code*.
-- **Antigravity 2 — non aujourd'hui.** La documentation des plugins est explicite : un plugin
-  contient des skills, des règles, un `mcp_config.json` et des hooks — **aucune contribution
-  d'interface**. Le shell Electron fait 4,3 Mo et ne contient ni `ui://`, ni le vocabulaire de
-  contribution de VS Code (`contributes`, `viewsContainers`, `webview`) ; il charge une interface
-  web distante, donc cette dernière vérification n'est pas concluante à elle seule. Google DeepMind
-  figure parmi les intéressés par MCP Apps : c'est la piste à resurveiller.
+Robin ne travaille pas dans le CLI Claude Code : il travaille dans **Claude**, l'application de
+bureau, et y utilise les onglets **Claude Code** et **Claude Cowork**. La distinction décide de
+tout, parce que MCP Apps est une affaire d'hôte graphique.
 
-Piège à ne pas répéter : `/Applications/Antigravity.app` **est** un bundle Electron et
-`~/.antigravity/extensions/` **contient** des extensions VS Code standard — mais ce dossier n'a pas
-bougé depuis le 14 mai 2026. C'est l'ancien IDE. Le toolkit communautaire `antigravity-panel`, qui
-ajoute un panneau latéral, est une extension VS Code pour cet IDE-là, pas pour Antigravity 2.
+- **Claude (mobile, web, bureau) — oui.** Annoncé pour tous les plans, du gratuit à l'entreprise.
+- **Claude Cowork — oui, explicitement.** Cité nommément dans l'annonce d'Anthropic. C'est la
+  surface la plus proche du travail de Robin, et sync-hub y est **déjà branché** comme serveur MCP :
+  il n'y a rien à installer, seulement une ressource à ajouter à ce qu'on expose.
+- **Claude Code — non mentionné.** Ni dans l'annonce d'Anthropic, ni dans celle du protocole. À
+  traiter comme non supporté tant qu'on ne l'a pas vu marcher. Sa surface reste la ligne d'état
+  (`statusLine`), du texte, sans bouton.
+- **ChatGPT — oui.** C'est l'hôte de référence de cette architecture (Apps SDK d'OpenAI,
+  standardisé ensuite en MCP Apps).
+- **Antigravity 2 — non aujourd'hui.** La documentation des plugins est explicite : skills, règles,
+  `mcp_config.json`, hooks — **aucune contribution d'interface**. Google DeepMind figure parmi les
+  intéressés par MCP Apps : c'est la piste à resurveiller.
+
+Vérification à ne pas refaire naïvement : chercher `ui://` dans le bundle de Claude ou d'Antigravity
+ne prouve rien. Ces applications sont minifiées — `strings` rend des lignes entières, un `grep -c`
+compte des lignes, et les occurrences trouvées dans Claude venaient en réalité des messages d'erreur
+d'un outil de copie de fichiers. Elles chargent en plus une bonne part de leur interface à distance.
+La source qui fait foi est l'annonce, pas le binaire.
 
 ### Si on le fait
 
 1. **Un seul composant, sur un seul outil MCP**, pour commencer : les fils liés, en lecture seule.
-2. **ChatGPT en premier**, puisque c'est là que la voie est ouverte et éprouvée.
-3. **Claude Code séparément**, par la ligne d'état, qui est un travail sans rapport — quelques
-   dizaines de caractères, pas un composant.
+2. **Cowork en premier**, pas ChatGPT : c'est là que Robin travaille, c'est supporté, et sync-hub y
+   est déjà déclaré. Le même composant vaudra ensuite pour ChatGPT sans être réécrit — c'est tout
+   l'intérêt d'une extension standardisée.
+3. **Claude Code séparément**, par la ligne d'état : quelques dizaines de caractères, un travail
+   sans rapport avec le composant.
 4. **Échec silencieux partout** : hub injoignable, réponse lente, format inattendu, le composant ne
    montre rien plutôt qu'une erreur dans l'outil de quelqu'un qui travaille.
