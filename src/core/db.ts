@@ -88,6 +88,17 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_thread_seq ON messages(thread_id, sequence);
 CREATE INDEX IF NOT EXISTS idx_messages_hash ON messages(hash);
+-- Everything the dashboard asks about engines, answered without touching the table.
+--
+-- computeStats wants a count and a last-ingest date per engine; getEngineStats also wants the
+-- number of distinct threads. On 197 591 rows that was six full scans plus a temporary B-tree:
+-- 11.2 s of the 13 s /api/stats took, and 3.4 s of getSyncOverview. With thread_id in the index
+-- the distinct count becomes a covering scan — 3 434 ms to 20 ms — and the per-engine count and
+-- max() come along for free at 3 and 6 ms.
+CREATE INDEX IF NOT EXISTS idx_messages_engine_thread_time ON messages(source_engine, thread_id, timestamp);
+-- Superseded by the three-column index above, which answers everything it did. Dropped rather
+-- than left behind: a second index on the same leading column is written on every insert.
+DROP INDEX IF EXISTS idx_messages_engine_timestamp;
 
 CREATE TABLE IF NOT EXISTS memories (
   id TEXT PRIMARY KEY,
@@ -2416,9 +2427,12 @@ export class Db {
 
   getEngineStats(): EngineStats[] {
     const rows = this.raw.prepare(`
-      SELECT 
+      SELECT
         source_engine as engine,
-        COUNT(DISTINCT id) as message_count,
+        -- COUNT(*), not COUNT(DISTINCT id): id is the primary key, so the DISTINCT could never
+        -- remove a row and only bought a temporary B-tree over every message. Measured at 3 518 ms
+        -- against 337 ms on 197 591 rows — ten times the cost for an identical answer.
+        COUNT(*) as message_count,
         COUNT(DISTINCT thread_id) as thread_count,
         MAX(timestamp) as last_active_at
       FROM messages
