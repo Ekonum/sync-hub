@@ -882,6 +882,25 @@ export function createApp(deps: AppDeps): FastifyInstance {
     );
   });
 
+  /**
+   * The whole corpus, day by day — the timeline you brush a period out of.
+   *
+   * Separate from /api/activity on purpose. That one answers about the selected window; this one
+   * has to stay put while the window moves, or the chart you are selecting on would redraw itself
+   * to fit the selection you just made. It ignores the date range for the same reason, and is
+   * memoised on its own key so dragging the selection never recomputes it.
+   */
+  app.get<{ Querystring: { projectId?: string; category?: string } }>('/api/activity/overview', async (req) => {
+    const rate = db.getKeystrokesPerMinute(req.user?.id);
+    return memoised(`activity-overview:${rate}:${JSON.stringify(req.query)}`, () => ({
+      byDate: db.getActivitySummary({
+        projectId: req.query.projectId,
+        category: req.query.category,
+        keystrokesPerMinute: rate,
+      }).byDate,
+    }));
+  });
+
   /** The typing pace the estimate is based on — deliberately the user's to set, and to lower. */
   app.put<{ Body: { keystrokesPerMinute?: number | null } }>('/api/account/typing-pace', async (req, reply) => {
     if (!req.user) return reply.code(401).send({ error: 'unauthenticated' });

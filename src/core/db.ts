@@ -693,6 +693,7 @@ export class Db {
     let totalTyping = 0;
     let totalThinking = 0;
     let cappedMessages = 0;
+    let promptCount = 0;
     let lastThread = '';
     let lastStamp = Number.NaN;
 
@@ -703,6 +704,7 @@ export class Db {
 
       const d = durationsForMessage({ role: row.role, content: row.content ?? '', timestamp: row.timestamp, gapMs }, rate);
       if (row.role === 'user') {
+        promptCount++;
         const uncapped = (typedCharacters(row.content ?? '') / rate) * 60_000;
         if (uncapped > d.typingMs + 1) cappedMessages++;
       }
@@ -740,6 +742,7 @@ export class Db {
       totalTypingMs: totalTyping,
       totalThinkingMs: totalThinking,
       messageCount: rows.length,
+      promptCount,
       cappedMessageCount: cappedMessages,
       keystrokesPerMinute: rate,
       byDate: [...byDate.entries()]
@@ -1241,8 +1244,54 @@ export class Db {
     return !!this.raw.prepare('SELECT 1 FROM messages WHERE hash = ?').get(hash);
   }
 
-  /** Returns false (and inserts nothing) when the hash already exists — the anti-duplicate gate. */
+  /**
+   * Fills in what an already-stored message is missing, and nothing else.
+   *
+   * Three columns arrived after most of the corpus already existed — model, usage, and the
+   * injected flag — and none of them is part of the hash, so a stored message can only pick them
+   * up here. The condition matters as much as the update: writing unconditionally rewrote every
+   * complete message, row and WAL, on every scan of every file.
+   */
+  private catchUpMetadata(message: Message, existing: any): void {
+    const wantInjected = message.isInjected ? 1 : 0;
+    const missing =
+      (message.model != null && existing.model == null) ||
+      (message.usage != null && existing.usage == null) ||
+      (message.estimatedTokens != null && existing.estimated_tokens == null) ||
+      existing.is_injected !== wantInjected;
+    if (!missing) return;
+    this.raw
+      .prepare(
+        `UPDATE messages
+            SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage),
+                estimated_tokens = COALESCE(estimated_tokens, @estimatedTokens),
+                is_injected = @isInjected
+          WHERE hash = @hash`,
+      )
+      .run({
+        hash: message.hash,
+        model: message.model ?? null,
+        usage: message.usage ? JSON.stringify(message.usage) : null,
+        estimatedTokens: message.estimatedTokens ?? null,
+        isInjected: wantInjected,
+      });
+  }
+
+  /**
+   * Stores a message, or recognises one already stored. Returns false when nothing was inserted.
+   *
+   * The already-stored case is checked with a lookup rather than by attempting the insert and
+   * catching the constraint. A re-scan runs at every daemon start and re-reads every file, so on
+   * this corpus the old shape raised and caught 200 000 exceptions each time, which is most of
+   * what made a start slow. The catch below still stands, for the races and the id conflicts it
+   * was really there for.
+   */
   insertMessage(message: Message): boolean {
+    const existing = this.raw.prepare('SELECT id, model, usage, estimated_tokens, is_injected FROM messages WHERE hash = ?').get(message.hash) as any;
+    if (existing) {
+      this.catchUpMetadata(message, existing);
+      return false;
+    }
     try {
       // Computed but not committed to this.nextIngestSeq until the INSERT actually succeeds below
       // — a failed attempt (caught by the branches beneath) must not burn a sequence number.
@@ -1283,33 +1332,9 @@ export class Db {
       return true;
     } catch (err: any) {
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.hash')) {
-        // A genuine re-ingestion of the same content (same id, same hash) — but model/usage/
-        // estimated_tokens are metadata added to the adapters after most messages already existed,
-        // and don't factor into the hash. Without this, an already-ingested message could never
-        // pick up this metadata on a later rescan: SQLite reports the hash conflict before the id
-        // conflict even though id is the primary key (verified), so the "update in place" branch
-        // below never runs for an otherwise-unchanged message. Backfill just these columns when
-        // they're newly available, leave everything else alone.
-        if (message.model || message.usage || message.estimatedTokens != null) {
-          this.raw
-            .prepare(
-              // The WHERE clause is not decoration. COALESCE alone made this a no-op that still
-              // wrote: every already-complete message was rewritten, row and WAL, on every scan of
-              // every file — and a scan runs at each daemon start. Restricting it to rows actually
-              // missing something turns a full pass over the corpus into almost no writes at all.
-              `UPDATE messages
-                  SET model = COALESCE(model, @model), usage = COALESCE(usage, @usage),
-                      estimated_tokens = COALESCE(estimated_tokens, @estimatedTokens)
-                WHERE hash = @hash
-                  AND (model IS NULL OR usage IS NULL OR estimated_tokens IS NULL)`,
-            )
-            .run({
-              hash: message.hash,
-              model: message.model ?? null,
-              usage: message.usage ? JSON.stringify(message.usage) : null,
-              estimatedTokens: message.estimatedTokens ?? null,
-            });
-        }
+        // A race, now that the common case is handled by the lookup above.
+        const row = this.raw.prepare('SELECT id, model, usage, estimated_tokens, is_injected FROM messages WHERE hash = ?').get(message.hash) as any;
+        if (row) this.catchUpMetadata(message, row);
         return false;
       }
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.id')) {

@@ -161,6 +161,8 @@ export interface ActivitySummary {
   /** Measured, not estimated. */
   totalThinkingMs: number;
   messageCount: number;
+  /** Turns the person took — what the average below is divided by. */
+  promptCount: number;
   /**
    * How many user messages had their estimate cut down by the elapsed-time cap. High is expected
    * and is the point: it says how much of the figure rests on observation rather than on the rate.

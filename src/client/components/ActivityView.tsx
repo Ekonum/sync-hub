@@ -3,8 +3,16 @@ import { Clock, Info, Keyboard, Loader2 } from 'lucide-react';
 import type { Project } from '../../types.js';
 import type { ActivitySummary } from '../../core/activity.js';
 import { api } from '../lib/api.js';
+import { ActivityTimeline } from './ActivityTimeline.js';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
+
+/** An average per message lands in seconds or minutes, where `hours` below would round to "0 h". */
+function shortDuration(ms: number): string {
+  if (ms >= 3_600_000) return `${(ms / 3_600_000).toFixed(1)} h`;
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)} min`;
+  return `${Math.round(ms / 1000)} s`;
+}
 
 function hours(ms: number): string {
   const h = ms / 3_600_000;
@@ -22,6 +30,9 @@ function hours(ms: number): string {
  */
 export function ActivityView({ projects }: { projects: Project[] }) {
   const [summary, setSummary] = useState<ActivitySummary | null>(null);
+  /** The whole corpus day by day. Fetched apart from the summary so that brushing a period out of
+   * it does not redraw the very chart being brushed. */
+  const [overview, setOverview] = useState<ActivitySummary['byDate']>([]);
   const [loading, setLoading] = useState(true);
   const [projectId, setProjectId] = useState('');
   const [category, setCategory] = useState('');
@@ -52,6 +63,17 @@ export function ActivityView({ projects }: { projects: Project[] }) {
     };
   }, [projectId, category, startDate, endDate]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .activityOverview({ projectId: projectId || undefined, category: category || undefined })
+      .then((r) => !cancelled && setOverview(r.byDate))
+      .catch(() => !cancelled && setOverview([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, category]);
+
   const categories = useMemo(
     () => [...new Set(projects.map((p) => p.category).filter((c): c is string => !!c))].sort(),
     [projects],
@@ -68,18 +90,8 @@ export function ActivityView({ projects }: { projects: Project[] }) {
     [summary],
   );
 
-  const maxDateMs = useMemo(
-    () => (summary ? Math.max(1, ...summary.byDate.map((d) => d.typingMs + d.thinkingMs)) : 1),
-    [summary],
-  );
-
   const isSingleDay = !!startDate && startDate === endDate;
-
-  /** Narrows both ends of the range to one day — the hour chart below then describes that day. */
-  function zoomToDay(date: string): void {
-    setStartDate(date);
-    setEndDate(date);
-  }
+  const hasPeriod = !!startDate || !!endDate;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 overflow-y-auto p-6">
@@ -155,7 +167,7 @@ export function ActivityView({ projects }: { projects: Project[] }) {
 
       {summary && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Keyboard className="h-4 w-4" /> Rédaction
@@ -174,6 +186,17 @@ export function ActivityView({ projects }: { projects: Project[] }) {
             </div>
             <div className="rounded-xl border border-border bg-card p-6">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Keyboard className="h-4 w-4" /> Par message
+              </div>
+              <div className="mt-2 text-3xl font-bold text-foreground">
+                {summary.promptCount > 0 ? shortDuration(summary.totalTypingMs / summary.promptCount) : '—'}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Rédaction moyenne sur les {summary.promptCount.toLocaleString('fr-FR')} messages écrits pendant la période.
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-card p-6">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Info className="h-4 w-4" /> Sur quoi ça repose
               </div>
               <div className="mt-2 text-3xl font-bold text-foreground">
@@ -186,44 +209,24 @@ export function ActivityView({ projects }: { projects: Project[] }) {
             </div>
           </div>
 
-          {/* Day by day, and the way into a single one. Reading a total for a month is not the
-              same as being able to answer "what did the 14th consist of", which is the question a
-              client actually asks — so a day is a button, not a label. */}
-          {summary.byDate.length > 1 && (
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex items-baseline justify-between gap-4">
-                <h2 className="text-base font-semibold text-foreground">Jour par jour</h2>
-                <p className="text-sm text-muted-foreground">Cliquer un jour pour n'afficher que celui-là.</p>
-              </div>
-              <div className="mt-6 flex h-48 items-stretch gap-1 overflow-x-auto">
-                {summary.byDate.map((d) => {
-                  const total = d.typingMs + d.thinkingMs;
-                  const height = Math.round((total / maxDateMs) * 100);
-                  return (
-                    <button
-                      key={d.date}
-                      onClick={() => zoomToDay(d.date)}
-                      title={`${d.date} — ${hours(total)}`}
-                      className="group flex h-full min-w-[10px] flex-1 flex-col items-center justify-end gap-2"
-                    >
-                      <div
-                        className="w-full rounded-xl bg-accent/70 transition-colors group-hover:bg-accent"
-                        style={{ height: `${Math.max(total > 0 ? 2 : 0, height)}%` }}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {summary.byDate[0].date} → {summary.byDate[summary.byDate.length - 1].date}
-              </p>
-            </div>
-          )}
+          <div className="rounded-xl border border-border bg-card p-6">
+            <ActivityTimeline
+              days={overview}
+              startDate={startDate}
+              endDate={endDate}
+              onSelect={(range) => {
+                setStartDate(range?.startDate ?? '');
+                setEndDate(range?.endDate ?? '');
+              }}
+            />
+          </div>
 
-          {isSingleDay && (
-            <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-6 py-4">
+          {hasPeriod && (
+            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-card px-6 py-4">
               <p className="text-sm text-foreground">
-                Journée du {new Date(`${startDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                {isSingleDay
+                  ? `Journée du ${new Date(`${startDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`
+                  : `Du ${new Date(`${startDate}T12:00:00`).toLocaleDateString('fr-FR')} au ${new Date(`${endDate}T12:00:00`).toLocaleDateString('fr-FR')}`}
               </p>
               <button
                 onClick={() => {

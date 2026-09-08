@@ -206,6 +206,14 @@ export const api = {
     const qs = params.toString();
     return jsonFetch<ActivitySummary>(`/api/activity${qs ? `?${qs}` : ''}`);
   },
+  /** The whole corpus day by day, unaffected by the selected period — what the timeline draws. */
+  activityOverview: (scope?: { projectId?: string; category?: string }) => {
+    const params = new URLSearchParams();
+    if (scope?.projectId) params.set('projectId', scope.projectId);
+    if (scope?.category) params.set('category', scope.category);
+    const qs = params.toString();
+    return jsonFetch<{ byDate: ActivitySummary['byDate'] }>(`/api/activity/overview${qs ? `?${qs}` : ''}`);
+  },
   setTypingPace: (keystrokesPerMinute: number | null) =>
     jsonFetch<{ ok: true; keystrokesPerMinute: number }>('/api/account/typing-pace', {
       method: 'PUT',

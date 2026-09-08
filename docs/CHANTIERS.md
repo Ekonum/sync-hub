@@ -72,3 +72,36 @@
 - **14** rubrique Connaissances rédigée (7 articles, 15 questions fréquentes, 6 captures) ;
   **il reste à déposer la clé API Odoo** puis à lancer `APPLY=1 python3
   docs/tuto-connaissances/publier.py`.
+
+---
+
+# Chantiers — demandés le 2026-09-08
+
+## Facturation : fusionner le temps et les jetons
+
+Une seule page de statistiques, **volontairement simple** : Robin insiste sur ce point, il ne veut
+pas d'un tableau de bord touffu. Deux réglages, dans les paramètres :
+
+- un **taux horaire** appliqué au temps de travail (par exemple 105 €/h) ;
+- un **taux de marge** appliqué au coût des jetons, éventuellement **négatif** — il peut choisir de
+  ne pas répercuter tout le coût, voire d'en absorber une partie.
+
+Ce que ça donne : le **coût effectif d'une tâche**, temps et jetons ensemble, et donc de quoi la
+refacturer sans la recalculer à la main.
+
+Points à trancher avant d'écrire quoi que ce soit :
+
+- la borne haute des archives (`isInferredModel`) ne doit jamais se retrouver mêlée à un montant
+  refacturé — c'est une hypothèse, pas une dépense, et la règle du projet est qu'elle ne se
+  confond avec rien ;
+- le temps est une **estimation plafonnée** et l'attente de l'IA une **mesure** ; un montant
+  facturable doit dire lequel des deux il additionne ;
+- un taux horaire est une donnée de compte, pas une donnée de projet — sauf si un client a le sien,
+  question à poser.
+
+## Feuilles de temps automatiques
+
+Plus loin : un outil qui lit tout ça par le MCP, plus les autres sources (les autres outils, et
+l'historique du téléphone), et **remplit les feuilles de temps tout seul**. Le MCP expose déjà
+`get_time_spent` (jour par jour, heure par heure) et les coûts ; ce qui manque est le rapprochement
+avec les tâches Odoo et une source d'activité hors clavier.
