@@ -71,7 +71,7 @@ export function formatThreadAsMarkdown(thread: Thread, project: Project | null, 
     lines.push('');
   }
 
-  lines.push('*Exporté depuis [Sync Hub](https://github.com/robjo82/sync-hub)*');
+  lines.push('*Exporté depuis [Sync Hub](https://github.com/Ekonum/sync-hub)*');
   return lines.join('\n');
 }
 
@@ -222,7 +222,7 @@ export function formatProjectAsMarkdown(project: Project, threadsWithMessages: T
     lines.push('');
   });
 
-  lines.push('*Export de projet généré par [Sync Hub](https://github.com/robjo82/sync-hub)*');
+  lines.push('*Export de projet généré par [Sync Hub](https://github.com/Ekonum/sync-hub)*');
   return lines.join('\n');
 }
 

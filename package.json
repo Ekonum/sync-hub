@@ -4,7 +4,7 @@
   "description": "Centralise en local, verbatim, l'historique de tes conversations IA (Claude Code, Codex, imports Claude.ai/ChatGPT) et l'expose via un dashboard et un serveur MCP.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/robjo82/sync-hub.git"
+    "url": "https://github.com/Ekonum/sync-hub.git"
   },
   "private": true,
   "type": "module",
