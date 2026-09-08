@@ -332,6 +332,9 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   // Content the tool put in the person's turn rather than the person: a skill body, a caveat
   // banner, an image placeholder. Kept verbatim like everything else, but not their prompt.
   { table: 'messages', column: 'is_injected', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // A secret was taken out of this message. The source file still contains it, so a re-read
+  // must not be allowed to put it back — see insertMessage's id-conflict branch.
+  { table: 'messages', column: 'redacted', definition: 'INTEGER NOT NULL DEFAULT 0' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -411,6 +414,7 @@ export class Db {
     this.nextIngestSeq = (this.raw.prepare('SELECT COALESCE(MAX(ingest_seq), 0) AS n FROM messages').get() as any).n;
     this.backfillIngestSeq();
     this.migrateMessageHashes();
+    this.markExistingRedactions();
   }
 
   /**
@@ -473,6 +477,25 @@ export class Db {
     }
     this.markMessageHashVersion();
     console.log(`sync-hub: ${done} empreintes de messages recalculées${collisions ? ` (${collisions} collisions laissées en l'état)` : ''}.`);
+  }
+
+  /**
+   * Flags messages redacted before the column existed, so the guard in insertMessage covers them.
+   *
+   * Matches on the marker redactSecret leaves behind. Not perfect — someone could have typed
+   * "[secret retiré]" themselves — but the failure is to protect a message that needed no
+   * protecting, which costs nothing, against the alternative of restoring a secret.
+   */
+  private markExistingRedactions(): void {
+    const changed = this.raw
+      .prepare(
+        `UPDATE messages SET redacted = 1
+          WHERE redacted = 0
+            AND (content LIKE '%[secret retiré]%' OR thought LIKE '%[secret retiré]%'
+                 OR tool_calls LIKE '%[secret retiré]%' OR tool_results LIKE '%[secret retiré]%')`,
+      )
+      .run().changes;
+    if (changed > 0) console.log(`sync-hub: ${changed} messages expurgés protégés d'une réécriture.`);
   }
 
   private markMessageHashVersion(): void {
@@ -1338,6 +1361,15 @@ export class Db {
         return false;
       }
       if (typeof err?.message === 'string' && err.message.includes('UNIQUE constraint failed: messages.id')) {
+        // Never re-write a message a secret was taken out of.
+        //
+        // Redacting changes the stored text, so the hash no longer matches what the adapter
+        // computes from the source file — which still holds the secret, since sync-hub does not
+        // write into another tool's storage. Every re-read therefore lands exactly here, and the
+        // update below would restore the secret and push it to the hub. Verified on this store:
+        // all 35 redacted messages were in that state.
+        const redacted = this.raw.prepare('SELECT redacted FROM messages WHERE id = ?').get(message.id) as any;
+        if (redacted?.redacted) return false;
         // The id is stable (derived from the source event), but the hash is derived from parsed
         // content/thought/tool fields — when adapter parsing logic evolves (e.g. reasoning-merge
         // changes), the same source id now yields different content. Update in place rather than
@@ -2446,7 +2478,7 @@ export class Db {
     let messagesChanged = 0;
     let occurrences = 0;
     const update = this.raw.prepare(
-      `UPDATE messages SET content = ?, thought = ?, tool_calls = ?, tool_results = ? WHERE id = ?`,
+      `UPDATE messages SET content = ?, thought = ?, tool_calls = ?, tool_results = ?, redacted = 1 WHERE id = ?`,
     );
 
     this.raw.transaction(() => {

@@ -84,6 +84,7 @@ async function fullScanProgressively(): Promise<void> {
   ];
 
   for (const engine of engines) {
+    const engineStarted = Date.now();
     for (const ref of engine.refs) {
       try {
         engine.ingest(ref);
@@ -94,14 +95,25 @@ async function fullScanProgressively(): Promise<void> {
       files++;
       await yieldToEventLoop();
     }
+    const seconds = (Date.now() - engineStarted) / 1000;
+    if (seconds >= 1) console.log(`sync-hub: ${engine.refs.length} fichiers en ${seconds.toFixed(0)} s`);
   }
 
-  // Small enough to run whole: these read a handful of files, not a session history.
-  cowork.ingestAll(db, registry);
-  ingestAllMemories(db, registry);
-  ingestClaudeExport(db, join(IMPORTS_DIR, 'claude'));
-  ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt'));
-  updateAllPointerFiles(db);
+  // These read whole archives rather than a session at a time, and none of them yields, so each
+  // one holds the event loop for as long as it takes. Timing them is how you find out which — the
+  // ChatGPT export alone is 281 MB here, and a slow phase is otherwise indistinguishable from a
+  // hung process.
+  const timed = (label: string, run: () => void) => {
+    const started = Date.now();
+    run();
+    const seconds = (Date.now() - started) / 1000;
+    if (seconds >= 1) console.log(`sync-hub: ${label} en ${seconds.toFixed(0)} s`);
+  };
+  timed('cowork', () => cowork.ingestAll(db, registry));
+  timed('mémoires', () => ingestAllMemories(db, registry));
+  timed('archive Claude', () => ingestClaudeExport(db, join(IMPORTS_DIR, 'claude')));
+  timed('archive ChatGPT', () => ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt')));
+  timed('fichiers repères', () => updateAllPointerFiles(db));
   lastPointerPass = new Date();
   console.log(`sync-hub: scan initial terminé (${files} fichiers de session).`);
 }

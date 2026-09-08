@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/core/db.js';
+import { computeMessageHash } from '../src/core/hash.js';
 
 let dir: string;
 let db: Db;
@@ -202,5 +203,50 @@ describe('Redaction propagation to the hub', () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe('une expurgation résiste à la ré-ingestion', () => {
+  it('does not let a re-read put the secret back', () => {
+    // The source file still holds the secret — sync-hub never writes into another tool's storage —
+    // so re-reading it computes the hash of the original text, misses, and lands on the id
+    // conflict. Left alone, that branch rewrites the row and the secret is back, and pushed.
+    const db = new Db(join(mkdtempSync(join(tmpdir(), 'sync-hub-redact-reingest-')), 'hub.sqlite'));
+    db.upsertProject({
+      id: 'p1', name: 'P', canonicalPath: '/tmp/p', aliases: { paths: [], claudeSlugs: [], codexCwds: [] },
+      createdAt: '2026-09-08T10:00:00.000Z', lastActiveAt: '2026-09-08T10:00:00.000Z',
+    });
+    db.upsertThread({
+      id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {},
+      messageCount: 0, promptCount: 0, createdAt: '2026-09-08T10:00:00.000Z',
+      updatedAt: '2026-09-08T10:00:00.000Z', status: 'active',
+    });
+
+    const original = {
+      id: 'm1', threadId: 't1', projectId: 'p1', sourceEngine: 'claude-code' as const,
+      role: 'user' as const, content: 'ma clé est sk-abcdef123456',
+      timestamp: '2026-09-08T10:00:00.000Z', sequence: 0,
+      hash: computeMessageHash({ threadId: 't1', timestamp: '2026-09-08T10:00:00.000Z', role: 'user', content: 'ma clé est sk-abcdef123456' }),
+    };
+    db.insertMessage(original);
+    db.redactSecret('sk-abcdef123456');
+    expect(db.getMessagesForThread('t1')[0].content).not.toContain('sk-abcdef123456');
+
+    // Recompute the stored hash over the redacted text, which is what the hash migration did to
+    // every row. That is what makes the next read miss and fall through to the id conflict; with
+    // the original hash still in place it would be found and left alone.
+    const redactedText = db.getMessagesForThread('t1')[0].content;
+    db.raw
+      .prepare('UPDATE messages SET hash = ? WHERE id = ?')
+      .run(
+        computeMessageHash({ threadId: 't1', timestamp: '2026-09-08T10:00:00.000Z', role: 'user', content: redactedText }),
+        'm1',
+      );
+
+    // The very same message, read again from the file that still contains the secret.
+    db.insertMessage(original);
+
+    expect(db.getMessagesForThread('t1')[0].content).not.toContain('sk-abcdef123456');
+    db.close();
   });
 });
