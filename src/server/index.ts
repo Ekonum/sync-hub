@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { Db } from '../core/db.js';
 import { ProjectRegistry } from '../core/registry.js';
 import { startWatching, type WatchHandle } from '../core/watch.js';
+import type { ScanProgress } from '../types.js';
 import { updateAllPointerFiles } from '../core/pointer-files.js';
 import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
@@ -49,42 +50,38 @@ const db = new Db(join(DATA_DIR, 'hub.sqlite'));
 const registry = new ProjectRegistry(db);
 if (!DISABLE_LOCAL_INGEST) registry.bootstrapFromProjectsRoot(PROJECTS_ROOT);
 
-function fullScan(): void {
-  if (DISABLE_LOCAL_INGEST) return;
-  claudeCode.ingestAll(db, registry);
-  codex.ingestAll(db, registry);
-  cowork.ingestAll(db, registry);
-  antigravity.ingestAll(db, registry);
-  ingestAllMemories(db, registry);
-  ingestClaudeExport(db, join(IMPORTS_DIR, 'claude'));
-  ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt'));
-  updateAllPointerFiles(db);
-}
-
 /** Hands the event loop back so pending HTTP requests get served between two files. */
 const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 /**
- * The same scan, one file at a time, yielding in between.
+ * The full scan, one file at a time, yielding in between.
+ *
+ * The only scan there is now. A synchronous twin existed for the "Rescanner" button, which meant
+ * pressing it blocked the server for the length of the scan — including the request that would
+ * have asked whether it was finished.
  *
  * The synchronous version blocks for as long as it takes — measured from a clean clone against a
  * real history: over six minutes, during which the dashboard answered nothing at all. Node runs
  * this on one thread, so listening earlier is not enough on its own; the loop has to be given
  * back. A newcomer now gets a dashboard immediately, and watches it fill.
  */
-async function fullScanProgressively(): Promise<void> {
+async function fullScanProgressively(onProgress?: (p: ScanProgress) => void): Promise<void> {
   if (DISABLE_LOCAL_INGEST) return;
   let files = 0;
 
-  const engines: Array<{ refs: unknown[]; ingest: (ref: any) => void }> = [
-    { refs: claudeCode.discoverSessionFiles(), ingest: (r) => claudeCode.ingestSessionFile(db, registry, r) },
-    { refs: codex.discoverSessionFiles(), ingest: (r) => codex.ingestSessionFile(db, registry, r) },
-    { refs: antigravity.discoverSessionFiles(), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
-    { refs: antigravity.discoverSessionFiles(antigravity.ANTIGRAVITY_CLI_BRAIN_ROOT), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
+  const engines: Array<{ name: string; refs: unknown[]; ingest: (ref: any) => void }> = [
+    { name: 'Claude Code', refs: claudeCode.discoverSessionFiles(), ingest: (r) => claudeCode.ingestSessionFile(db, registry, r) },
+    { name: 'Codex', refs: codex.discoverSessionFiles(), ingest: (r) => codex.ingestSessionFile(db, registry, r) },
+    { name: 'Antigravity', refs: antigravity.discoverSessionFiles(), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
+    { name: 'Antigravity CLI', refs: antigravity.discoverSessionFiles(antigravity.ANTIGRAVITY_CLI_BRAIN_ROOT), ingest: (r) => antigravity.ingestSessionFile(db, registry, r) },
   ];
+  // Counted once, up front: a progress figure whose denominator moves tells you nothing.
+  const total = engines.reduce((n, e) => n + e.refs.length, 0);
+  const report = (phase: string) => onProgress?.({ running: true, done: files, total, phase });
 
   for (const engine of engines) {
     const engineStarted = Date.now();
+    report(engine.name);
     for (const ref of engine.refs) {
       try {
         engine.ingest(ref);
@@ -93,10 +90,11 @@ async function fullScanProgressively(): Promise<void> {
         console.error('sync-hub: fichier ignoré pendant le scan initial', err);
       }
       files++;
+      report(engine.name);
       await yieldToEventLoop();
     }
     const seconds = (Date.now() - engineStarted) / 1000;
-    if (seconds >= 1) console.log(`sync-hub: ${engine.refs.length} fichiers en ${seconds.toFixed(0)} s`);
+    if (seconds >= 1) console.log(`sync-hub: ${engine.name}, ${engine.refs.length} fichiers en ${seconds.toFixed(0)} s`);
   }
 
   // These read whole archives rather than a session at a time, and none of them yields, so each
@@ -105,6 +103,7 @@ async function fullScanProgressively(): Promise<void> {
   // hung process.
   const timed = (label: string, run: () => void) => {
     const started = Date.now();
+    report(label);
     run();
     const seconds = (Date.now() - started) / 1000;
     if (seconds >= 1) console.log(`sync-hub: ${label} en ${seconds.toFixed(0)} s`);
@@ -114,6 +113,7 @@ async function fullScanProgressively(): Promise<void> {
   timed('archive Claude', () => ingestClaudeExport(db, join(IMPORTS_DIR, 'claude')));
   timed('archive ChatGPT', () => ingestChatGptExport(db, join(IMPORTS_DIR, 'chatgpt')));
   timed('fichiers repères', () => updateAllPointerFiles(db));
+  onProgress?.({ running: false, done: files, total, phase: '' });
   lastPointerPass = new Date();
   console.log(`sync-hub: scan initial terminé (${files} fichiers de session).`);
 }
@@ -189,7 +189,7 @@ const appDeps: Parameters<typeof createApp>[0] = {
   db,
   registry,
   watchHandle,
-  rescan: fullScan,
+  rescan: fullScanProgressively,
   onEnrol: (hubUrl, token) => {
     REMOTE_URL = hubUrl;
     REMOTE_TOKEN = token;

@@ -124,3 +124,47 @@ un segment [début, fin] en temps réel, on prend l'union par jour, et on répar
 projets — la répartition étant elle-même une décision à prendre, puisqu'un instant couvert par deux
 projets doit aller quelque part. À trancher avec Robin avant d'écrire quoi que ce soit, et à faire
 **avant** le taux horaire décrit plus haut, sans quoi la première facture générée sera fausse.
+
+## Se greffer sur les trois applications
+
+Idée : afficher **discrètement**, dans Claude Code / ChatGPT-Codex / Antigravity, ce que sync-hub
+sait déjà — les conversations liées à celle en cours, un bouton pour synchroniser ce fil tout de
+suite, la différence de contexte avec un fil frère. Rien qui s'impose, rien qui puisse casser
+l'interface hôte.
+
+Ce qui est vérifié sur le poste de Robin (2026-09-08), pas supposé :
+
+- **Antigravity 2 — extensions et plugins maison, pas VS Code.** Robin utilise Antigravity 2.12.2
+  (`com.google.antigravity`), pas l'IDE. La distinction compte : `/Applications/Antigravity.app`
+  contient bien un `app.asar` et `~/.antigravity/extensions/` tient des extensions VS Code
+  standard, mais ce dossier n'a pas bougé depuis le 14 mai 2026, ni `~/.antigravity-ide` depuis le
+  24 — c'est l'ancien IDE, abandonné. Ce qui tourne écrit sous `~/.gemini/antigravity/`, avec ses
+  propres points d'extension :
+  `~/.gemini/extensions/<nom>/gemini-extension.json` (manifeste déclarant des `mcpServers`, des
+  agents et des skills, activable par chemin via `extension-enablement.json`),
+  `~/.gemini/config/plugins/` (dont un `google-antigravity-sdk` qui porte skills et références), et
+  `~/.gemini/antigravity/mcp_config.json` — où **sync-hub est déjà déclaré**. C'est donc la voie la
+  plus avancée des trois, et la moins risquée : on étend par déclaration, pas par injection.
+- **Claude Code — pas une interface à décorer.** Les points d'extension sont ceux du CLI : serveurs
+  MCP (déjà utilisés), hooks, skills, commandes slash, plugins (`~/.claude/plugins/`, place de
+  marché `claude-plugins-official`). La seule surface d'affichage continue est la **ligne d'état**,
+  qui accepte du texte arbitraire — assez pour « 3 fils liés · dernier écho il y a 12 min », pas
+  pour un bouton à côté d'un message.
+- **ChatGPT / Codex — deux cas à ne pas confondre.** Le CLI Codex lit des `mcp_servers` dans
+  `~/.codex/config.toml`, plus des connecteurs et des automatisations : c'est extensible
+  proprement. L'interface web de ChatGPT, elle, n'a aucune API d'extension ; Codex y accède par un
+  **hôte natif Chrome** (`~/.codex/chrome-native-hosts-v2.json`), c'est-à-dire une extension de
+  navigateur. C'est la seule voie, et c'est la fragile : elle dépend du balisage de la page, elle
+  casse à chaque refonte, et une erreur d'injection abîme l'interface de quelqu'un d'autre.
+
+Comment le cadrer, si on le fait :
+
+1. **Lecture d'abord.** Une première version qui n'affiche que ce que le MCP renvoie déjà, sans
+   aucune action. Si elle n'apporte rien, on s'arrête là et on n'a rien cassé.
+2. **Jamais dans le flux de la conversation.** Une surface propre à l'hôte — ligne d'état, panneau,
+   sortie d'outil — pas un élément injecté entre deux messages, où il entrerait en concurrence
+   avec le contenu.
+3. **Échec silencieux.** Hub injoignable, réponse lente, format inattendu : l'extension ne montre
+   rien, elle n'affiche pas d'erreur dans l'outil de quelqu'un qui travaille.
+4. **Antigravity 2 en premier**, parce que c'est là que le mécanisme est déclaratif et que sync-hub
+   y est déjà branché. Le reste se décide au vu de ce que ça donne.

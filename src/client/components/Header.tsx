@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { Cloud, Laptop, Moon, RefreshCw, Sun } from 'lucide-react';
 import { UserMenu } from './UserMenu.js';
 import { api } from '../lib/api.js';
-import type { RemoteSyncState } from '../../types.js';
+import type { RemoteSyncState, ScanProgress } from '../../types.js';
 
 type Tab = 'projects' | 'coverage' | 'unassigned' | 'search' | 'costs' | 'activity' | 'account';
 
 interface HeaderProps {
   connected: boolean;
   scanning: boolean;
+  /** Where the scan has got to, or null when nothing is running. */
+  scanProgress?: ScanProgress | null;
   onRescan: () => void;
   tab: Tab;
   onTabChange: (tab: Tab) => void;
@@ -28,7 +30,16 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'activity', label: 'Temps' },
 ];
 
-export function Header({ connected, scanning, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
+/** "Claude Code 12/34", or the phase alone once the file pass is done and archives are reading. */
+function scanLabel(progress?: ScanProgress | null): string {
+  if (!progress) return 'Scan en cours…';
+  if (progress.total > 0 && progress.done < progress.total) {
+    return `${progress.phase} ${progress.done}/${progress.total}`;
+  }
+  return progress.phase ? `${progress.phase}…` : 'Scan en cours…';
+}
+
+export function Header({ connected, scanning, scanProgress, onRescan, tab, onTabChange, unassignedCount, theme, onToggleTheme }: HeaderProps) {
   const [syncStatus, setSyncStatus] = useState<{
     configured: boolean;
     remoteUrl: string | null;
@@ -110,7 +121,9 @@ export function Header({ connected, scanning, onRescan, tab, onTabChange, unassi
           className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 cursor-pointer"
         >
           <RefreshCw size={14} className={scanning ? 'animate-spin' : ''} />
-          {scanning ? 'Scan en cours…' : 'Rescanner'}
+          {/* "Scan en cours" says only that something is happening, which on a corpus this size is
+              several minutes of not knowing whether it is stuck. The count is what tells you. */}
+          {scanning ? scanLabel(scanProgress) : 'Rescanner'}
         </button>
       )}
 

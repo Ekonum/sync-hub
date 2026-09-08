@@ -55,6 +55,7 @@ import type {
   WebSocketEvent,
 } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
+import type { ScanProgress } from '../types.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -73,7 +74,12 @@ export interface AppDeps {
   db: Db;
   registry: ProjectRegistry;
   watchHandle: Pick<WatchHandle, 'isActive' | 'ready' | 'close'>;
-  rescan: () => void;
+  /**
+   * Re-reads every source file. Progressive and awaitable: it hands the event loop back between
+   * files and reports where it has got to, so the dashboard keeps answering and the button can say
+   * something more useful than that something is happening.
+   */
+  rescan: (onProgress?: (progress: ScanProgress) => void) => Promise<void> | void;
   archiveRoots: ArchiveRoots;
   /** Where deleteProject moves a project's real folder — defaults to the real ~/.Trash; override in tests. */
   trashRoot?: string;
@@ -173,6 +179,8 @@ function extractSessionToken(req: FastifyRequest): string | null {
 
 export function createApp(deps: AppDeps): FastifyInstance {
   const { db, registry, rescan } = deps;
+  /** One rescan at a time — a second would read the same files against the same database. */
+  let scanning = false;
   const sockets = new Set<WebSocket>();
 
   function broadcast(event: WebSocketEvent): void {
@@ -1395,10 +1403,24 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return { ok: true, stats };
   });
 
+  /**
+   * Starts a rescan and answers straight away.
+   *
+   * It used to run the whole scan before replying, which on this corpus is minutes with the server
+   * unable to answer anything at all — including the request asking whether the scan was done.
+   * Progress arrives on the WebSocket instead.
+   */
   app.post('/api/sync/rescan', async () => {
-    rescan();
-    broadcast({ type: 'stats_updated', data: computeStats(deps) });
-    return { ok: true, stats: computeStats(deps) };
+    if (scanning) return { ok: true, alreadyRunning: true, stats: computeStats(deps) };
+    scanning = true;
+    void Promise.resolve(rescan((progress) => broadcast({ type: 'scan_progress', data: progress })))
+      .catch((err) => console.error('sync-hub: rescan en échec', err))
+      .finally(() => {
+        scanning = false;
+        broadcast({ type: 'scan_progress', data: { running: false, done: 0, total: 0, phase: '' } });
+        broadcast({ type: 'stats_updated', data: computeStats(deps) });
+      });
+    return { ok: true, started: true, stats: computeStats(deps) };
   });
 
   // Receiving end of remote sync (see core/sync-push-client.ts for the pushing side). Applies a

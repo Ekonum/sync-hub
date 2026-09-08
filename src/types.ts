@@ -208,7 +208,19 @@ export type WebSocketEvent =
   | { type: 'new_message'; data: Message }
   | { type: 'thread_updated'; data: Thread }
   | { type: 'project_updated'; data: Project }
-  | { type: 'stats_updated'; data: SyncStats };
+  | { type: 'stats_updated'; data: SyncStats }
+  /** Where the file scan has got to. `total` is 0 while the file list is still being built. */
+  | { type: 'scan_progress'; data: ScanProgress };
+
+export interface ScanProgress {
+  running: boolean;
+  /** Files read so far. */
+  done: number;
+  /** Files to read in this pass. */
+  total: number;
+  /** What it is reading — an engine name, or the archive it has moved on to. */
+  phase: string;
+}
 
 /** Body of POST /api/sync/push — a batch of raw verbatim data pushed from one local sync-hub
  * instance to a remote hub it's configured to back up to (see core/sync-push-client.ts). */

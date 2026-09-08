@@ -426,6 +426,39 @@ describe('sync-hub HTTP API', () => {
     expect(rescan).toHaveBeenCalledOnce();
   });
 
+  it('answers without waiting for the scan to finish', async () => {
+    // It used to reply only once the whole scan was done, which on a real history is minutes with
+    // the server unable to answer anything at all — including the request asking if it was done.
+    let release: () => void = () => {};
+    rescan.mockImplementation(() => new Promise<void>((resolve) => {
+      release = resolve;
+    }));
+
+    const res = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().started).toBe(true);
+
+    // And a second press does not start a second pass over the same files.
+    const again = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
+    expect(again.json().alreadyRunning).toBe(true);
+    expect(rescan).toHaveBeenCalledOnce();
+
+    release();
+  });
+
+  it('reports where the scan has got to', async () => {
+    const seen: unknown[] = [];
+    rescan.mockImplementation(async (onProgress: (p: unknown) => void) => {
+      onProgress({ running: true, done: 3, total: 34, phase: 'Claude Code' });
+      seen.push('called');
+    });
+
+    const res = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
+    expect(res.statusCode).toBe(200);
+    // The callback the route hands down is what carries progress to the dashboard.
+    expect(seen).toEqual(['called']);
+  });
+
   describe('POST /api/imports/:tool — uploading an export .zip from the dashboard', () => {
     function multipartBody(filename: string, content: Buffer): { payload: Buffer; contentType: string } {
       const boundary = '----sync-hub-test-boundary';

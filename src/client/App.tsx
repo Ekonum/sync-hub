@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Project, SyncStats } from '../types.js';
+import type { Project, ScanProgress, SyncStats } from '../types.js';
 import { UNASSIGNED_PROJECT_ID } from '../types.js';
 import { readCache, writeCache } from './lib/cache.js';
 import { api, connectSocket } from './lib/api.js';
@@ -56,6 +56,7 @@ function MainDashboard() {
   const [stats, setStats] = useState<SyncStats | null>(null);
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [tab, setTab] = useState<Tab>('projects');
   const [selected, setSelected] = useState<SelectedItem>(null);
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
@@ -88,6 +89,10 @@ function MainDashboard() {
           setProjectsLoaded(true);
           writeCache('projects', event.data.projects);
           setStats(event.data.stats);
+          break;
+        case 'scan_progress':
+          setScanProgress(event.data.running ? event.data : null);
+          setScanning(event.data.running);
           break;
         case 'stats_updated':
           setStats(event.data);
@@ -143,6 +148,7 @@ function MainDashboard() {
       <Header
         connected={connected}
         scanning={scanning}
+        scanProgress={scanProgress}
         onRescan={rescan}
         tab={tab}
         onTabChange={setTab}
