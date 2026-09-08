@@ -127,44 +127,54 @@ projets doit aller quelque part. À trancher avec Robin avant d'écrire quoi que
 
 ## Se greffer sur les trois applications
 
-Idée : afficher **discrètement**, dans Claude Code / ChatGPT-Codex / Antigravity, ce que sync-hub
-sait déjà — les conversations liées à celle en cours, un bouton pour synchroniser ce fil tout de
-suite, la différence de contexte avec un fil frère. Rien qui s'impose, rien qui puisse casser
-l'interface hôte.
+Idée : afficher **discrètement**, dans les outils eux-mêmes, ce que sync-hub sait déjà — les
+conversations liées à celle en cours, un bouton pour synchroniser ce fil tout de suite, la
+différence de contexte avec un fil frère. Vraiment dans l'interface, pas sous forme de réponse
+d'outil.
 
-Ce qui est vérifié sur le poste de Robin (2026-09-08), pas supposé :
+### La voie supportée existe, et elle passe par MCP
 
-- **Antigravity 2 — extensions et plugins maison, pas VS Code.** Robin utilise Antigravity 2.12.2
-  (`com.google.antigravity`), pas l'IDE. La distinction compte : `/Applications/Antigravity.app`
-  contient bien un `app.asar` et `~/.antigravity/extensions/` tient des extensions VS Code
-  standard, mais ce dossier n'a pas bougé depuis le 14 mai 2026, ni `~/.antigravity-ide` depuis le
-  24 — c'est l'ancien IDE, abandonné. Ce qui tourne écrit sous `~/.gemini/antigravity/`, avec ses
-  propres points d'extension :
-  `~/.gemini/extensions/<nom>/gemini-extension.json` (manifeste déclarant des `mcpServers`, des
-  agents et des skills, activable par chemin via `extension-enablement.json`),
-  `~/.gemini/config/plugins/` (dont un `google-antigravity-sdk` qui porte skills et références), et
-  `~/.gemini/antigravity/mcp_config.json` — où **sync-hub est déjà déclaré**. C'est donc la voie la
-  plus avancée des trois, et la moins risquée : on étend par déclaration, pas par injection.
-- **Claude Code — pas une interface à décorer.** Les points d'extension sont ceux du CLI : serveurs
-  MCP (déjà utilisés), hooks, skills, commandes slash, plugins (`~/.claude/plugins/`, place de
-  marché `claude-plugins-official`). La seule surface d'affichage continue est la **ligne d'état**,
-  qui accepte du texte arbitraire — assez pour « 3 fils liés · dernier écho il y a 12 min », pas
-  pour un bouton à côté d'un message.
-- **ChatGPT / Codex — deux cas à ne pas confondre.** Le CLI Codex lit des `mcp_servers` dans
-  `~/.codex/config.toml`, plus des connecteurs et des automatisations : c'est extensible
-  proprement. L'interface web de ChatGPT, elle, n'a aucune API d'extension ; Codex y accède par un
-  **hôte natif Chrome** (`~/.codex/chrome-native-hosts-v2.json`), c'est-à-dire une extension de
-  navigateur. C'est la seule voie, et c'est la fragile : elle dépend du balisage de la page, elle
-  casse à chaque refonte, et une erreur d'injection abîme l'interface de quelqu'un d'autre.
+**MCP Apps** est une extension officielle du protocole (annoncée le 26 janvier 2026, donnée pour
+prête en production). Un serveur MCP déclare, sur un outil, un `_meta.ui.resourceUri` pointant vers
+une ressource `ui://` qui contient du HTML/JS ; l'hôte la charge dans une **iframe isolée** et rend
+le composant dans la conversation, avec un dialogue bidirectionnel en JSON-RPC par `postMessage`.
+C'est l'architecture de l'Apps SDK d'OpenAI, standardisée ensuite pour tous les hôtes.
 
-Comment le cadrer, si on le fait :
+Ce que ça change pour nous : sync-hub **expose déjà un serveur MCP**. Afficher une carte « 3 fils
+liés · dernier écho il y a 12 min » avec un bouton, ce n'est pas écrire une extension par
+application, c'est ajouter une ressource à ce qu'on a. Et l'isolation en iframe est exactement le
+cadrage demandé : on ne peut pas casser l'interface hôte, au pire le composant ne s'affiche pas.
 
-1. **Lecture d'abord.** Une première version qui n'affiche que ce que le MCP renvoie déjà, sans
-   aucune action. Si elle n'apporte rien, on s'arrête là et on n'a rien cassé.
-2. **Jamais dans le flux de la conversation.** Une surface propre à l'hôte — ligne d'état, panneau,
-   sortie d'outil — pas un élément injecté entre deux messages, où il entrerait en concurrence
-   avec le contenu.
-3. **Échec silencieux.** Hub injoignable, réponse lente, format inattendu : l'extension ne montre
-   rien, elle n'affiche pas d'erreur dans l'outil de quelqu'un qui travaille.
-4. **Antigravity 2 en premier**, parce que c'est là que le mécanisme est déclaratif et que sync-hub
-   y est déjà branché. Le reste se décide au vu de ce que ça donne.
+Hôtes annoncés comme le supportant : **Claude (web et bureau)**, **ChatGPT**, **VS Code**
+(Insiders), **Goose**. Microsoft, JetBrains, AWS et Google DeepMind se sont dits intéressés sans
+confirmer d'implémentation.
+
+### Ce que ça donne pour les trois outils de Robin
+
+- **ChatGPT — oui, directement.** C'est l'hôte de référence de cette architecture.
+- **Claude Code — non, et c'est structurel.** Vérifié sur le binaire installé : aucune trace de
+  `ui://` ni de `resourceUri`. C'est un programme de terminal, il n'a pas d'iframe. Sa seule
+  surface d'affichage continue est la **ligne d'état** (`statusLine` dans les réglages, présent
+  30 fois dans le binaire) : du texte, rafraîchi, suffisant pour « 3 fils liés · dernier écho il y
+  a 12 min », pas pour un bouton. À noter : *Claude* (web et bureau) supporte MCP Apps, mais c'est
+  une autre application que *Claude Code*.
+- **Antigravity 2 — non aujourd'hui.** La documentation des plugins est explicite : un plugin
+  contient des skills, des règles, un `mcp_config.json` et des hooks — **aucune contribution
+  d'interface**. Le shell Electron fait 4,3 Mo et ne contient ni `ui://`, ni le vocabulaire de
+  contribution de VS Code (`contributes`, `viewsContainers`, `webview`) ; il charge une interface
+  web distante, donc cette dernière vérification n'est pas concluante à elle seule. Google DeepMind
+  figure parmi les intéressés par MCP Apps : c'est la piste à resurveiller.
+
+Piège à ne pas répéter : `/Applications/Antigravity.app` **est** un bundle Electron et
+`~/.antigravity/extensions/` **contient** des extensions VS Code standard — mais ce dossier n'a pas
+bougé depuis le 14 mai 2026. C'est l'ancien IDE. Le toolkit communautaire `antigravity-panel`, qui
+ajoute un panneau latéral, est une extension VS Code pour cet IDE-là, pas pour Antigravity 2.
+
+### Si on le fait
+
+1. **Un seul composant, sur un seul outil MCP**, pour commencer : les fils liés, en lecture seule.
+2. **ChatGPT en premier**, puisque c'est là que la voie est ouverte et éprouvée.
+3. **Claude Code séparément**, par la ligne d'état, qui est un travail sans rapport — quelques
+   dizaines de caractères, pas un composant.
+4. **Échec silencieux partout** : hub injoignable, réponse lente, format inattendu, le composant ne
+   montre rien plutôt qu'une erreur dans l'outil de quelqu'un qui travaille.
