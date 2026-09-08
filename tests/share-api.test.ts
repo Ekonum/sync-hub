@@ -57,7 +57,8 @@ describe('API - Thread Sharing & Public Links', () => {
       engineIds: { 'claude-code': 'cc-1' },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      messageCount: 0, status: 'active',
+      messageCount: 0,
+      promptCount: 0, status: 'active',
     });
 
     db.insertMessage({

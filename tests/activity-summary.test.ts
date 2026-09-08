@@ -27,7 +27,7 @@ describe('getActivitySummary', () => {
     db = new Db(join(dir, 'hub.sqlite'));
     const now = '2026-09-01T08:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'Acritec', canonicalPath: join(dir, 'p1'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now, category: 'client' });
-    db.upsertThread({ id: 't1', projectId: 'p1', title: 'T1', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    db.upsertThread({ id: 't1', projectId: 'p1', title: 'T1', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
   });
 
   afterEach(() => {
@@ -80,7 +80,7 @@ describe('getActivitySummary', () => {
   it('narrows to one project, one thread, one category', () => {
     const now = '2026-09-01T08:00:00.000Z';
     db.upsertProject({ id: 'p2', name: 'Perso', canonicalPath: join(dir, 'p2'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now, category: 'perso' });
-    db.upsertThread({ id: 't2', projectId: 'p2', title: 'T2', originEngine: 'codex', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    db.upsertThread({ id: 't2', projectId: 'p2', title: 'T2', originEngine: 'codex', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
     exchange('t1', 0, '2026-09-01T09:00:00.000Z', 'Sujet client', 20);
     db.insertMessage({
       id: 't2-u0', threadId: 't2', projectId: 'p2', sourceEngine: 'codex', role: 'user',
@@ -117,7 +117,7 @@ describe('getActivitySummary', () => {
     // t2's first message must not be measured against t1's last: they are different conversations,
     // and the gap between them is not work on either.
     const now = '2026-09-01T08:00:00.000Z';
-    db.upsertThread({ id: 't2', projectId: 'p1', title: 'T2', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    db.upsertThread({ id: 't2', projectId: 'p1', title: 'T2', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
     exchange('t1', 0, '2026-09-01T09:00:00.000Z', 'Fil un', 10);
     exchange('t2', 0, '2026-09-01T09:00:20.000Z', 'Fil deux', 10);
 

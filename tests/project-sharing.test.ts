@@ -39,6 +39,7 @@ function seedProject(id: string, ownerId: string, name: string) {
     originEngine: 'claude-code',
     engineIds: {},
     messageCount: 1,
+    promptCount: 1,
     createdAt: now,
     updatedAt: now,
     status: 'active',

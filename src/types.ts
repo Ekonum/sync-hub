@@ -74,7 +74,12 @@ export interface Thread {
   sourceRef?: string;
   /** Absolute path to the real session file this thread was ingested from, if any — lets archiving move the actual source file. */
   sourceFilePath?: string;
+  /** Everything stored for the thread: the person's turns, the model's, and every tool call and
+   * result. Useful as a measure of how much material a thread holds. */
   messageCount: number;
+  /** Just the person's own turns. What a reader means by "how long is this conversation" — across
+   * this corpus the two differ by a factor of seven, tool traffic being most of what is stored. */
+  promptCount: number;
   createdAt: string;
   updatedAt: string;
   status: 'active' | 'archived';

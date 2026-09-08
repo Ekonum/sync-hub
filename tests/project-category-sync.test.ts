@@ -72,7 +72,7 @@ describe('renameThread', () => {
     const now = '2026-09-03T10:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'P', canonicalPath: join(dir, 'p'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
     db.upsertThread({
-      id: 't1', projectId: 'p1', originEngine: 'claude-code', engineIds: {}, messageCount: 0,
+      id: 't1', projectId: 'p1', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0,
       createdAt: now, updatedAt: now, status: 'active',
       // Exactly the failure mode: the thread opens on something technical and is named after it.
       title: 'Traceback (most recent call last): File "x.py", line 3',

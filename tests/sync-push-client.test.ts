@@ -65,6 +65,7 @@ beforeEach(async () => {
     originEngine: 'claude-code',
     engineIds: {},
     messageCount: 0,
+    promptCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     status: 'active',

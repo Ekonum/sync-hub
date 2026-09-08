@@ -45,6 +45,10 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // OpenAI / Codex (developers.openai.com/api/docs/pricing) — gpt-5.3-codex intentionally
   // omitted: confirmed (learn.chatgpt.com/docs/pricing) to be research-preview only, "isn't
   // available in the API at launch", no published per-token rate to use.
+  // Rates as published; the cached-input rate is the one figure not stated to us, taken at the
+  // tenth of input that every gpt-5.x line above follows. It moves the total by very little —
+  // cached input is a tenth of a tenth — but it is an assumption, not a reading.
+  'gpt-6-astra': { inputPerMTok: 10, outputPerMTok: 50, cachedInputPerMTok: 1 },
   'gpt-5.6-sol': { inputPerMTok: 5, outputPerMTok: 30, cachedInputPerMTok: 0.5 },
   'gpt-5.6-terra': { inputPerMTok: 2, outputPerMTok: 12, cachedInputPerMTok: 0.2 },
   'gpt-5.6-luna': { inputPerMTok: 0.2, outputPerMTok: 1.2, cachedInputPerMTok: 0.02 },

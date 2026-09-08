@@ -787,7 +787,16 @@ function ProjectNode({
               >
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ENGINE_DOT[t.originEngine] ?? 'bg-muted-foreground'}`} />
                 <span className="truncate">{t.title}</span>
-                <span className="ml-auto shrink-0 text-muted-foreground">{t.messageCount}</span>
+                {/* The person's own turns, not everything stored. A thread reads as 12 exchanges to
+                    whoever had them; showing 84 counts the model's replies and every tool call
+                    with them, which measures the transcript rather than the conversation. The
+                    total stays a hover away, since it is the better gauge of how much is in there. */}
+                <span
+                  className="ml-auto shrink-0 text-muted-foreground"
+                  title={`${t.promptCount} message${t.promptCount > 1 ? 's' : ''} · ${t.messageCount} entrées en tout avec les réponses et les outils`}
+                >
+                  {t.promptCount}
+                </span>
               </button>
               <ThreadArchiveButton
                 title={t.title}

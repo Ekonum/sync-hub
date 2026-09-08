@@ -20,6 +20,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     originEngine: 'codex',
     engineIds: {},
     messageCount: 0,
+    promptCount: 0,
     createdAt: now,
     updatedAt: now,
     status: 'active',

@@ -25,7 +25,7 @@ describe('expensive aggregates are memoised, but never stale', () => {
     db = new Db(join(dir, 'hub.sqlite'));
     const now = '2026-08-01T10:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'P', canonicalPath: join(dir, 'p'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
-    db.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    db.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
     db.insertMessage(message('m1', 0));
     app = createApp({
       db, registry: new ProjectRegistry(db), watchHandle: fakeWatch, rescan: () => {},

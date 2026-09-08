@@ -96,6 +96,11 @@ CREATE INDEX IF NOT EXISTS idx_messages_hash ON messages(hash);
 -- the distinct count becomes a covering scan — 3 434 ms to 20 ms — and the per-engine count and
 -- max() come along for free at 3 and 6 ms.
 CREATE INDEX IF NOT EXISTS idx_messages_engine_thread_time ON messages(source_engine, thread_id, timestamp);
+-- Counting a thread's messages, and how many of them are the person's own turns. Without role in
+-- the index the second count meant a row lookup per message: 1 181 ms for 5 456 threads against
+-- 19 ms with it — and it makes the plain count ten times faster too (203 ms -> 19 ms), since that
+-- one no longer touches the table either.
+CREATE INDEX IF NOT EXISTS idx_messages_thread_role ON messages(thread_id, role);
 -- Superseded by the three-column index above, which answers everything it did. Dropped rather
 -- than left behind: a second index on the same leading column is written on every insert.
 DROP INDEX IF EXISTS idx_messages_engine_timestamp;
@@ -962,7 +967,8 @@ export class Db {
   getThreadsForProject(projectId: string): Thread[] {
     const rows = this.raw
       .prepare(
-        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
          FROM threads t WHERE t.project_id = ? ORDER BY t.updated_at DESC`,
       )
       .all(projectId) as any[];
@@ -972,7 +978,8 @@ export class Db {
   getThread(id: string): Thread | undefined {
     const row = this.raw
       .prepare(
-        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
          FROM threads t WHERE t.id = ?`,
       )
       .get(id) as any;
@@ -986,7 +993,8 @@ export class Db {
     const placeholders = ids.map(() => '?').join(',');
     const rows = this.raw
       .prepare(
-        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
          FROM threads t WHERE t.id IN (${placeholders})`,
       )
       .all(...ids) as any[];
@@ -2586,6 +2594,7 @@ function rowToThread(row: any): Thread {
     sourceRef: row.source_ref ?? undefined,
     sourceFilePath: row.source_file_path ?? undefined,
     messageCount: row.message_count ?? 0,
+    promptCount: row.prompt_count ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     status: row.status,

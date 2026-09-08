@@ -32,6 +32,12 @@ const OPENAI_ERAS: EraEntry[] = [
   { from: '2025-12-11', model: 'gpt-5.2' },
   { from: '2026-03-05', model: 'gpt-5.4' },
   { from: '2026-04-23', model: 'gpt-5.5' },
+  // The two below are dated from the first message carrying them in this corpus, not from a
+  // published release note — say so rather than imply otherwise. A date that is later than the
+  // real one only under-dates the era, which for an upper bound is the safe direction to be
+  // wrong in; leaving them out was the unsafe direction, since gpt-6-astra is twice gpt-5.5.
+  { from: '2026-05-16', model: 'gpt-5.6-sol' },
+  { from: '2026-09-06', model: 'gpt-6-astra' },
 ];
 
 const ANTHROPIC_ERAS: EraEntry[] = [

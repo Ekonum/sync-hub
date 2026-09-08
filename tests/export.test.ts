@@ -25,6 +25,7 @@ describe('export helpers', () => {
     originEngine: 'claude-code',
     engineIds: {},
     messageCount: 2,
+    promptCount: 2,
     createdAt: '2026-08-28T10:00:00Z',
     updatedAt: '2026-08-28T12:00:00Z',
     status: 'active',

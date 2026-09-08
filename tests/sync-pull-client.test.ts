@@ -80,6 +80,7 @@ describe('Sync - Pull Client & Multi-Device Sync', () => {
       createdAt: '2026-01-01T10:00:00.000Z',
       updatedAt: '2026-01-01T12:00:00.000Z',
       messageCount: 2,
+      promptCount: 2,
       status: 'active',
     });
 
@@ -167,6 +168,7 @@ describe('Sync - Pull Client & Multi-Device Sync', () => {
       createdAt: '2026-01-01T10:00:00.000Z',
       updatedAt: '2026-01-01T12:00:00.000Z',
       messageCount: 5,
+      promptCount: 5,
       status: 'active',
     });
 
@@ -221,6 +223,7 @@ describe('Sync - Pull Client & Multi-Device Sync', () => {
         createdAt: '2026-01-01T10:00:00.000Z',
         updatedAt: '2026-01-01T12:00:00.000Z',
         messageCount: 1,
+        promptCount: 1,
         status: 'active',
       });
 

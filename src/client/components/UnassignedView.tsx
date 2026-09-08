@@ -27,7 +27,12 @@ function ThreadRow({ thread, projects, onAssigned }: { thread: Thread; projects:
       <td className="max-w-xs truncate px-4 py-2 font-mono text-sm text-muted-foreground/70" title={thread.sourceRef}>
         {thread.sourceRef ?? '—'}
       </td>
-      <td className="px-4 py-2 text-muted-foreground">{thread.messageCount}</td>
+      <td
+        className="px-4 py-2 text-muted-foreground"
+        title={`${thread.messageCount} entrées en tout avec les réponses et les outils`}
+      >
+        {thread.promptCount}
+      </td>
       <td className="px-4 py-2">
         <div className="flex items-center gap-2">
           <select
@@ -117,7 +122,7 @@ export function UnassignedView({ projects }: { projects: Project[] }) {
                 <th className="px-4 py-2 font-medium">Fil</th>
                 <th className="px-4 py-2 font-medium">Outil</th>
                 <th className="px-4 py-2 font-medium">Source (cwd / slug)</th>
-                <th className="px-4 py-2 font-medium">Messages</th>
+                <th className="px-4 py-2 font-medium">Prompts</th>
                 <th className="px-4 py-2 font-medium">Action</th>
               </tr>
             </thead>

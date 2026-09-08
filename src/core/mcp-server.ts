@@ -300,7 +300,7 @@ export function createMcpServer(
         const firstUser = db.getMessagesForThread(t.id).find((m) => m.role === 'user');
         const excerpt = firstUser ? firstUser.content.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
         return (
-          `${t.id} — ${t.title} (${ENGINE_LABEL[t.originEngine] ?? t.originEngine}, ${t.messageCount} messages, maj ${t.updatedAt})` +
+          `${t.id} — ${t.title} (${ENGINE_LABEL[t.originEngine] ?? t.originEngine}, ${t.promptCount} messages sur ${t.messageCount} entrées, maj ${t.updatedAt})` +
           (excerpt ? `\n  extrait: ${excerpt}` : '')
         );
       });

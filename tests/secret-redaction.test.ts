@@ -13,7 +13,7 @@ beforeEach(() => {
   db = new Db(join(dir, 'hub.sqlite'));
   const now = new Date().toISOString();
   db.upsertProject({ id: 'p1', name: 'P', canonicalPath: '/tmp/p', aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
-  db.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+  db.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
 });
 
 afterEach(() => {
@@ -130,7 +130,7 @@ describe('Redaction propagation to the hub', () => {
     const hubDb = new Db(join(hubDir, 'hub.sqlite'));
     const now = new Date().toISOString();
     hubDb.upsertProject({ id: 'p1', name: 'P', canonicalPath: '/tmp/p', aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
-    hubDb.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    hubDb.upsertThread({ id: 't1', projectId: 'p1', title: 'T', originEngine: 'claude-code', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
     hubDb.insertMessage({
       id: 'hub-m1', threadId: 't1', projectId: 'p1', sourceEngine: 'claude-code', role: 'user',
       content: `copie côté hub avec ${SECRET} dedans`, timestamp: now, sequence: 0, hash: 'hub-hash',

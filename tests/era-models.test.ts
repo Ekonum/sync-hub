@@ -6,7 +6,15 @@ describe('modelForEra', () => {
   it('picks the flagship in service on that date, not the newest ever', () => {
     expect(modelForEra('openai', '2023-06-01T10:00:00Z')).toBe('gpt-4');
     expect(modelForEra('openai', '2024-08-01T10:00:00Z')).toBe('gpt-4o');
-    expect(modelForEra('openai', '2026-08-01T10:00:00Z')).toBe('gpt-5.5');
+    expect(modelForEra('openai', '2026-04-01T10:00:00Z')).toBe('gpt-5.4');
+    expect(modelForEra('openai', '2026-08-01T10:00:00Z')).toBe('gpt-5.6-sol');
+    expect(modelForEra('openai', '2026-09-07T10:00:00Z')).toBe('gpt-6-astra');
+  });
+
+  it('never prices an archive below the flagship of its date', () => {
+    // The point of the table is an upper bound, so a missing era is the one failure that matters:
+    // it would silently fall back to an older, cheaper model. gpt-6-astra is twice gpt-5.5.
+    expect(modelForEra('openai', '2026-09-07T10:00:00Z')).not.toBe('gpt-5.5');
   });
 
   it('leaves a conversation older than any priced model uncounted', () => {
@@ -49,7 +57,7 @@ describe('archive upper bound in the cost summary', () => {
     const db = new Db(join(dir, 'hub.sqlite'));
     const now = '2024-08-01T10:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'P', canonicalPath: '/tmp/p', aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
-    db.upsertThread({ id: 'chatgpt-export-abc', projectId: 'p1', title: 'T', originEngine: 'codex', engineIds: {}, messageCount: 0, createdAt: now, updatedAt: now, status: 'active' });
+    db.upsertThread({ id: 'chatgpt-export-abc', projectId: 'p1', title: 'T', originEngine: 'codex', engineIds: {}, messageCount: 0, promptCount: 0, createdAt: now, updatedAt: now, status: 'active' });
     db.insertMessage({
       id: 'a1', threadId: 'chatgpt-export-abc', projectId: 'p1', sourceEngine: 'codex', role: 'assistant',
       content: 'une réponse archivée', timestamp: now, sequence: 0, hash: 'h1', estimatedTokens: 1_000_000,

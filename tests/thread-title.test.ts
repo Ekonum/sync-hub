@@ -89,7 +89,7 @@ describe('a hand-chosen title outlives re-ingestion', () => {
     const now = '2026-09-03T10:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'P', canonicalPath: join(dir, 'p'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
     const thread = {
-      id: 't1', projectId: 'p1', originEngine: 'codex' as const, engineIds: {}, messageCount: 0,
+      id: 't1', projectId: 'p1', originEngine: 'codex' as const, engineIds: {}, messageCount: 0, promptCount: 0,
       createdAt: now, updatedAt: now, status: 'active' as const, title: 'Traceback (most recent call last)',
     };
     db.upsertThread(thread);
@@ -119,7 +119,7 @@ describe('a hand-chosen title outlives re-ingestion', () => {
     const now = '2026-09-03T10:00:00.000Z';
     db.upsertProject({ id: 'p1', name: 'P', canonicalPath: join(dir, 'p'), aliases: { paths: [], claudeSlugs: [], codexCwds: [] }, createdAt: now, lastActiveAt: now });
     const thread = {
-      id: 't1', projectId: 'p1', originEngine: 'codex' as const, engineIds: {}, messageCount: 0,
+      id: 't1', projectId: 'p1', originEngine: 'codex' as const, engineIds: {}, messageCount: 0, promptCount: 0,
       createdAt: now, updatedAt: now, status: 'active' as const, title: 'Session 019fc39b',
     };
     db.upsertThread(thread);
