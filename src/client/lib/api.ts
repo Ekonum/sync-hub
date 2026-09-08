@@ -142,6 +142,7 @@ export const api = {
   projects: () => jsonFetch<Project[]>('/api/projects'),
   threads: (projectId: string) => jsonFetch<Thread[]>(`/api/projects/${projectId}/threads`),
   thread: (threadId: string) => jsonFetch<Thread>(`/api/threads/${threadId}`),
+  subThreads: (threadId: string) => jsonFetch<Thread[]>(`/api/threads/${threadId}/subthreads`),
   memories: (projectId: string) => jsonFetch<Memory[]>(`/api/projects/${projectId}/memories`),
   artifacts: (projectId: string) => jsonFetch<Artifact[]>(`/api/projects/${projectId}/artifacts`),
   messages: (threadId: string, page?: { offset: number; limit: number }) =>

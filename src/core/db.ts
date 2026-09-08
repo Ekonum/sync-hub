@@ -3,6 +3,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
+import { computeMessageHash } from './hash.js';
 import { modelForEra, providerForThread } from './era-models.js';
 import { DEFAULT_KEYSTROKES_PER_MINUTE, durationsForMessage, typedCharacters } from './activity.js';
 import type { ActivityScope, ActivitySummary } from './activity.js';
@@ -323,6 +324,11 @@ const EXPECTED_COLUMNS: Array<{ table: string; column: string; definition: strin
   { table: 'threads', column: 'source_file_path', definition: 'TEXT' },
   // Set once a human names the thread, so re-ingesting its session file cannot undo that.
   { table: 'threads', column: 'title_custom', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  // The conversation this one was spawned from: a sub-agent an assistant started to work on
+  // part of a problem while it carried on. Deliberately no REFERENCES clause — the parent may
+  // be ingested after the child (files arrive in directory order, not causal order), and a
+  // foreign key would reject the child rather than wait.
+  { table: 'threads', column: 'parent_thread_id', definition: 'TEXT' },
   { table: 'messages', column: 'model', definition: 'TEXT' },
   { table: 'messages', column: 'usage', definition: 'TEXT' },
   { table: 'messages', column: 'estimated_tokens', definition: 'INTEGER' },
@@ -387,6 +393,8 @@ export class Db {
     for (const { table, column, definition } of EXPECTED_COLUMNS) {
       ensureColumn(this.raw, table, column, definition);
     }
+    // After ensureColumn, not in SCHEMA: the column it indexes is added there, and SCHEMA runs first.
+    this.raw.exec('CREATE INDEX IF NOT EXISTS idx_threads_parent ON threads(parent_thread_id)');
     this.migrateProjectUniqueness();
     this.adoptOrphanProjectsOnSingleUserStore();
     // The minimum set asked for — seeded once so they always show up in the picker, even before
@@ -396,6 +404,57 @@ export class Db {
     this.backfillEstimatedTokens();
     this.nextIngestSeq = (this.raw.prepare('SELECT COALESCE(MAX(ingest_seq), 0) AS n FROM messages').get() as any).n;
     this.backfillIngestSeq();
+    this.migrateMessageHashes();
+  }
+
+  /**
+   * Rewrites every message hash after core/hash.ts started keying on thread and timestamp.
+   *
+   * Without this, a re-scan would compute a new hash for a message that is already stored, miss it,
+   * attempt an insert, collide on the primary key and take insertMessage's update-in-place branch —
+   * correct, but that branch also rebuilds the FTS row, so converging the corpus would mean
+   * reindexing 197 000 messages. Recomputing the hash directly is one UPDATE per row and touches
+   * no index but the unique one on hash itself.
+   *
+   * Only after this runs can the turns lost to the old key come back: a re-scan then finds the
+   * stored ones by hash, leaves them alone, and inserts the ones that were never stored at all.
+   *
+   * Batched and resumable for the same reason as backfillIngestSeq — a single transaction over the
+   * whole table builds a WAL of hundreds of megabytes and starts from scratch if the process dies.
+   */
+  private migrateMessageHashes(): void {
+    const probe = this.raw.prepare('SELECT * FROM messages LIMIT 1').get() as any;
+    if (!probe) return;
+    if (probe.hash === computeMessageHash(rowToMessage(probe))) return; // already migrated
+
+    const read = this.raw.prepare('SELECT * FROM messages WHERE rowid > ? ORDER BY rowid LIMIT 2000');
+    const write = this.raw.prepare('UPDATE messages SET hash = ? WHERE rowid = ?');
+    let cursor = 0;
+    let done = 0;
+    let collisions = 0;
+    for (;;) {
+      const rows = read.all(cursor) as any[];
+      if (rows.length === 0) break;
+      this.raw.transaction(() => {
+        for (const row of rows) {
+          const hash = computeMessageHash(rowToMessage(row));
+          if (hash !== row.hash) {
+            try {
+              write.run(hash, row.rowid);
+              done++;
+            } catch (err: any) {
+              // Two rows that genuinely are the same turn read twice. The unique index is right to
+              // refuse; leaving this one on its old hash is harmless, since the next scan will find
+              // the surviving row by the new hash and skip re-inserting either.
+              if (!String(err?.message).includes('UNIQUE constraint failed')) throw err;
+              collisions++;
+            }
+          }
+          cursor = row.rowid;
+        }
+      })();
+    }
+    console.log(`sync-hub: ${done} empreintes de messages recalculées${collisions ? ` (${collisions} collisions laissées en l'état)` : ''}.`);
   }
 
   /**
@@ -555,7 +614,14 @@ export class Db {
    * The walk has to be ordered by thread, which is why this is not a plain GROUP BY.
    */
   getActivitySummary(scope: ActivityScope = {}): ActivitySummary {
-    const clauses: string[] = ["m.role IN ('user','assistant')"];
+    const clauses: string[] = [
+      "m.role IN ('user','assistant')",
+      // A sub-agent's "user" turns are an assistant instructing itself while it got on with
+      // something else. Billing them as time somebody spent typing would charge a client for work
+      // that took no human minutes at all — and would do it invisibly, since a sub-agent's
+      // instruction reads exactly like a prompt.
+      'th.parent_thread_id IS NULL',
+    ];
     const params: unknown[] = [];
     if (scope.threadId) {
       clauses.push('m.thread_id = ?');
@@ -583,6 +649,7 @@ export class Db {
         `SELECT m.thread_id, m.project_id, m.role, m.content, m.timestamp
          FROM messages m
          LEFT JOIN projects p ON p.id = m.project_id
+         JOIN threads th ON th.id = m.thread_id
          WHERE ${clauses.join(' AND ')}
          ORDER BY m.thread_id, m.sequence ASC`,
       )
@@ -917,10 +984,13 @@ export class Db {
   upsertThread(thread: Thread): void {
     this.raw
       .prepare(
-        `INSERT INTO threads (id, project_id, title, origin_engine, engine_ids, source_ref, source_file_path, created_at, updated_at, status)
-         VALUES (@id, @projectId, @title, @originEngine, @engineIds, @sourceRef, @sourceFilePath, @createdAt, @updatedAt, @status)
+        `INSERT INTO threads (id, project_id, title, origin_engine, engine_ids, source_ref, source_file_path, created_at, updated_at, status, parent_thread_id)
+         VALUES (@id, @projectId, @title, @originEngine, @engineIds, @sourceRef, @sourceFilePath, @createdAt, @updatedAt, @status, @parentThreadId)
          ON CONFLICT(id) DO UPDATE SET
            project_id = excluded.project_id,
+           -- COALESCE, so a caller that does not know about the parent (a remote push from an
+           -- older instance, a rename) cannot erase a link already established here.
+           parent_thread_id = COALESCE(excluded.parent_thread_id, parent_thread_id),
            -- Codex recomputes a thread's title from its first message on every ingest, so without
            -- this a rename survived only until the session file next changed — which is to say,
            -- until the next message. A title someone chose outranks one we derived.
@@ -941,6 +1011,7 @@ export class Db {
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         status: thread.status,
+        parentThreadId: thread.parentThreadId ?? null,
       });
     this.raw.prepare('DELETE FROM threads_fts WHERE thread_id = ?').run(thread.id);
     this.raw.prepare('INSERT INTO threads_fts (title, thread_id) VALUES (?, ?)').run(thread.title, thread.id);
@@ -964,12 +1035,20 @@ export class Db {
     this.raw.prepare('DELETE FROM threads WHERE id = ?').run(id);
   }
 
+  /**
+   * The conversations of a project — the ones somebody had, not the sub-agents spawned inside them.
+   *
+   * A sub-agent gets its own transcript file and so its own thread row, but listing it beside real
+   * conversations is wrong twice over: it is titled with the instruction it was given, and it is
+   * not a conversation anyone had. It is reached through its parent instead. `getSubThreads` below
+   * is how the parent shows them.
+   */
   getThreadsForProject(projectId: string): Thread[] {
     const rows = this.raw
       .prepare(
         `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
                 (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
-         FROM threads t WHERE t.project_id = ? ORDER BY t.updated_at DESC`,
+         FROM threads t WHERE t.project_id = ? AND t.parent_thread_id IS NULL ORDER BY t.updated_at DESC`,
       )
       .all(projectId) as any[];
     return rows.map(rowToThread);
@@ -1924,9 +2003,23 @@ export class Db {
 
   countThreadsForProject(projectId: string, status?: string): number {
     const row = status
-      ? (this.raw.prepare('SELECT COUNT(*) as n FROM threads WHERE project_id = ? AND status = ?').get(projectId, status) as any)
-      : (this.raw.prepare('SELECT COUNT(*) as n FROM threads WHERE project_id = ?').get(projectId) as any);
+      ? (this.raw
+          .prepare('SELECT COUNT(*) as n FROM threads WHERE project_id = ? AND status = ? AND parent_thread_id IS NULL')
+          .get(projectId, status) as any)
+      : (this.raw.prepare('SELECT COUNT(*) as n FROM threads WHERE project_id = ? AND parent_thread_id IS NULL').get(projectId) as any);
     return row?.n ?? 0;
+  }
+
+  /** The sub-agents spawned from a conversation, oldest first — the order they were started in. */
+  getSubThreads(parentThreadId: string): Thread[] {
+    const rows = this.raw
+      .prepare(
+        `SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id) AS message_count,
+                (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.id AND m.role = 'user') AS prompt_count
+         FROM threads t WHERE t.parent_thread_id = ? ORDER BY t.created_at ASC`,
+      )
+      .all(parentThreadId) as any[];
+    return rows.map(rowToThread);
   }
 
   // --- Users & Authentication ---
@@ -2595,6 +2688,7 @@ function rowToThread(row: any): Thread {
     sourceFilePath: row.source_file_path ?? undefined,
     messageCount: row.message_count ?? 0,
     promptCount: row.prompt_count ?? 0,
+    parentThreadId: row.parent_thread_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     status: row.status,

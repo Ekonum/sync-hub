@@ -97,8 +97,8 @@ function ProjectActionsMenu({ onPick }: { onPick: (panel: ProjectPanel) => void 
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className={`ml-2 shrink-0 items-center rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground ${
-          open ? 'flex' : 'hidden group-hover:flex'
+        className={`ml-2 flex shrink-0 items-center rounded-xl p-2 text-muted-foreground hover:bg-muted hover:text-foreground ${
+          open ? 'visible' : 'invisible group-hover:visible'
         }`}
       >
         <MoreHorizontal size={16} />
@@ -129,7 +129,7 @@ function IconButton({ title, onClick, className, children }: { title: string; on
         e.stopPropagation();
         onClick();
       }}
-      className={`ml-2 hidden shrink-0 items-center rounded-xl p-2 text-muted-foreground group-hover:flex ${className}`}
+      className={`ml-2 invisible flex shrink-0 items-center rounded-xl p-2 text-muted-foreground group-hover:visible ${className}`}
     >
       {children}
     </button>
@@ -690,8 +690,12 @@ function ProjectNode({
   return (
     <div ref={rootRef}>
       <div className={`group flex items-center rounded-xl hover:bg-muted ${isFocusTarget ? 'bg-accent-muted' : ''}`}>
+        {/* `invisible`, not `hidden`: the handle has to occupy its place even when unseen. Appearing
+            on hover made it take width at that moment, which slid the disclosure arrow to the right
+            exactly as the pointer arrived on it — the control moved away from the cursor reaching
+            for it. Reserving the space costs a few pixels of indent and nothing ever moves. */}
         {draggable && (
-          <span title="Glisser pour réorganiser" className="hidden shrink-0 cursor-grab px-2 text-muted-foreground group-hover:block">
+          <span title="Glisser pour réorganiser" className="invisible block shrink-0 cursor-grab px-2 text-muted-foreground group-hover:visible">
             <GripVertical size={14} />
           </span>
         )}

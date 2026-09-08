@@ -172,6 +172,7 @@ function MainDashboard() {
                   allProjects={projects}
                   onChanged={refetchProjects}
                   onDeleted={() => setSelected(null)}
+                  onSelectThread={(id) => setSelected({ kind: 'thread', id })}
                 />
               )}
               {(selected?.kind === 'memory' || selected?.kind === 'artifact') && <DocumentViewer document={selected} />}

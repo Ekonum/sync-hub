@@ -171,8 +171,8 @@ function toCanonicalMessage(node: ChatGptNode, threadId: string, projectId: stri
 
   if (!text && !thought) return null;
 
-  const hash = computeMessageHash(role, text, thought);
   const timestamp = msg.create_time ? new Date(msg.create_time * 1000).toISOString() : new Date(0).toISOString();
+  const hash = computeMessageHash({ threadId, timestamp, role, content: text, thought });
   // Scoped to threadId by construction rather than trusting msg.id to be globally unique on its
   // own — ChatGPT's node ids are UUIDs in practice, but nothing guarantees that across every
   // conversation in an export, and a collision would crash the whole import on a PRIMARY KEY hit.
@@ -220,7 +220,10 @@ function mergeThoughtsIntoFollowingMessage(messages: Message[]): Message[] {
   }
   if (pending) {
     const last = messages[messages.length - 1];
-    out.push({ ...last, id: `${last.id}-thought`, content: '', thought: pending, hash: computeMessageHash('assistant', '', pending) });
+    out.push({
+      ...last, id: `${last.id}-thought`, content: '', thought: pending,
+      hash: computeMessageHash({ threadId: last.threadId, timestamp: last.timestamp, role: 'assistant', content: '', thought: pending }),
+    });
   }
   return out;
 }

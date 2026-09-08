@@ -80,6 +80,13 @@ export interface Thread {
   /** Just the person's own turns. What a reader means by "how long is this conversation" — across
    * this corpus the two differ by a factor of seven, tool traffic being most of what is stored. */
   promptCount: number;
+  /**
+   * The conversation this one was spawned from, when it is a sub-agent an assistant started to
+   * work on part of a problem in parallel. Its turns are the assistant instructing itself, not the
+   * person typing, so it is excluded from the thread list, from prompt counts and from billed time
+   * — it belongs to its parent, and is read there.
+   */
+  parentThreadId?: string;
   createdAt: string;
   updatedAt: string;
   status: 'active' | 'archived';

@@ -204,7 +204,10 @@ export function ingestSessionFile(
     if (!parsed) continue;
     if (parsed.role === 'user' && firstUserContent === undefined) firstUserContent = parsed.content;
 
-    const hash = computeMessageHash(parsed.role, parsed.content, parsed.thought, parsed.toolCalls, parsed.toolResults);
+    const hash = computeMessageHash({
+      threadId: ref.sessionId, timestamp: parsed.timestamp, role: parsed.role,
+      content: parsed.content, thought: parsed.thought, toolCalls: parsed.toolCalls, toolResults: parsed.toolResults,
+    });
     const message: Message = {
       id: parsed.uuid,
       threadId: ref.sessionId,

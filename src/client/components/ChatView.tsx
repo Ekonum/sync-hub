@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Brain,
@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   FolderInput,
+  GitBranch,
   Info,
   List,
   Settings2,
@@ -355,6 +356,37 @@ function isUserItem(item: RenderItem): boolean {
  * consecutive assistant turn is what makes a thread read as a wall of stamps; it earns its place
  * when the turn actually starts something — the first item, a reply to the user, a switch of
  * engine, or a real pause. */
+/**
+ * The sub-agents this conversation started.
+ *
+ * They are real transcripts with their own turns, so they keep their own thread and are read on
+ * their own; what they are not is conversations of their own, so they are reached from here rather
+ * than sitting in the project list under the instruction they happened to be given.
+ */
+function SubAgentList({ threads, onOpen }: { threads: Thread[]; onOpen: (id: string) => void }) {
+  return (
+    <div className="mb-4 rounded-xl border border-border bg-card px-4 py-4">
+      <p className="label mb-2">
+        {threads.length} sous-agent{threads.length > 1 ? 's' : ''} lancé{threads.length > 1 ? 's' : ''} depuis ce fil
+      </p>
+      <ul className="stack">
+        {threads.map((t) => (
+          <li key={t.id}>
+            <button
+              onClick={() => onOpen(t.id)}
+              className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <GitBranch size={14} className="shrink-0" />
+              <span className="truncate">{t.title}</span>
+              <span className="ml-auto shrink-0">{t.messageCount}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function shouldShowMeta(item: RenderItem, previous: RenderItem | undefined): boolean {
   if (!previous) return true;
   if (isUserItem(item)) return true;
@@ -445,11 +477,14 @@ export function ChatView({
   allProjects,
   onChanged,
   onDeleted,
+  onSelectThread,
 }: {
   threadId: string;
   allProjects: Project[];
   onChanged: () => void;
   onDeleted: () => void;
+  /** Opens another thread — used to follow a sub-agent out of the conversation that started it. */
+  onSelectThread?: (threadId: string) => void;
 }) {
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
@@ -457,6 +492,7 @@ export function ChatView({
   const [total, setTotal] = useState(0);
   const [windowStart, setWindowStart] = useState(0);
   const [outline, setOutline] = useState<ThreadOutlineEntry[]>([]);
+  const [subThreads, setSubThreads] = useState<Thread[]>([]);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -476,6 +512,8 @@ export function ChatView({
     });
     api.thread(threadId).then((t) => !cancelled && setThread(t));
     api.threadOutline(threadId).then((o) => !cancelled && setOutline(o));
+    setSubThreads([]);
+    api.subThreads(threadId).then((t) => !cancelled && setSubThreads(t)).catch(() => {});
     // A thread switch while a page is still in flight would otherwise paint the previous thread's
     // messages over the new one.
     return () => {
@@ -495,6 +533,35 @@ export function ChatView({
       setLoadingMore(false);
     }
   }
+
+  /**
+   * Reading to the bottom asks for the next page by itself.
+   *
+   * The margin is the point: the sentinel counts as reached 600px before it is actually on screen,
+   * so the request is already in flight while there is still a screenful left to read. Waiting for
+   * the true bottom would show the reader an empty end and then a jump.
+   *
+   * `inFlight` is a ref rather than state because the observer fires several times during one
+   * scroll and must not queue a second request for the same page; state would be read stale.
+   */
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0]?.isIntersecting || inFlight.current) return;
+        inFlight.current = true;
+        void loadMore().finally(() => {
+          inFlight.current = false;
+        });
+      },
+      { rootMargin: '600px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [threadId, loadedEnd, total]);
 
   /** Jumping replaces the window rather than paging forward to reach the target: reaching message
    * 12 000 by appending 100 at a time would be 120 requests and 12 000 mounted nodes. */
@@ -654,6 +721,10 @@ export function ChatView({
         </p>
       )}
 
+      {subThreads.length > 0 && (
+        <SubAgentList threads={subThreads} onOpen={(id) => onSelectThread?.(id)} />
+      )}
+
       <div id="thread-top" className="flex flex-col gap-4">
         {messages.length === 0 && <p className="text-sm text-muted-foreground">Aucun message dans ce fil.</p>}
         {items.map((item, idx) => (
@@ -668,10 +739,16 @@ export function ChatView({
       </div>
 
       {loadedEnd < total && (
-        <div className="mt-4 flex flex-col items-center gap-2">
-          <button onClick={loadMore} disabled={loadingMore} className={`${actionButtonClass} disabled:opacity-50`}>
-            {loadingMore ? 'Chargement…' : `Charger la suite (${total - loadedEnd} messages restants)`}
-          </button>
+        <div ref={sentinelRef} className="mt-4 flex flex-col items-center gap-2">
+          {/* The button stays for the browser without an IntersectionObserver, and for anyone who
+              would rather ask than scroll. It is the fallback now, not the way through. */}
+          {typeof IntersectionObserver === 'undefined' ? (
+            <button onClick={loadMore} disabled={loadingMore} className={`${actionButtonClass} disabled:opacity-50`}>
+              {loadingMore ? 'Chargement…' : `Charger la suite (${total - loadedEnd} messages restants)`}
+            </button>
+          ) : (
+            <span className="text-sm text-muted-foreground">{loadingMore ? 'Chargement…' : ''}</span>
+          )}
           <span className="text-sm text-muted-foreground">
             {loadedEnd} / {total} affichés
           </span>

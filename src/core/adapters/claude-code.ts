@@ -37,7 +37,38 @@ export interface SessionFileRef {
   /** Directory name under .claude/projects — Claude Code's own slug for the project path. */
   slug: string;
   sessionId: string;
+  /**
+   * For a sub-agent transcript, the session that spawned it.
+   *
+   * Claude Code writes a sub-agent's conversation to its own file, in a `subagents/` folder beside
+   * the session that started it: `<slug>/<session>/subagents/agent-<id>.jsonl`. Read as an ordinary
+   * session — which is what happened until this — each one becomes a separate conversation in the
+   * dashboard, titled with the instruction the assistant gave it, and lands in whatever project the
+   * directory name "subagents" happens to resolve to, which is none.
+   */
+  parentSessionId?: string;
 }
+
+/**
+ * Reads the layout of a Claude Code transcript path.
+ *
+ * Two shapes exist: `<slug>/<session>.jsonl` for a conversation, and
+ * `<slug>/<session>/subagents/agent-<id>.jsonl` for a sub-agent one of its turns started. The
+ * slug is what resolves the project, so for a sub-agent it has to be read from the grandparent
+ * rather than from the immediate directory — otherwise the project is decided by the literal word
+ * "subagents".
+ */
+function refFromParts(filePath: string): SessionFileRef {
+  const sessionId = basename(filePath, '.jsonl');
+  const dir = dirname(filePath);
+  if (basename(dir) === SUBAGENT_DIR) {
+    const parentDir = dirname(dir);
+    return { filePath, slug: basename(dirname(parentDir)), sessionId, parentSessionId: basename(parentDir) };
+  }
+  return { filePath, slug: basename(dir), sessionId };
+}
+
+const SUBAGENT_DIR = 'subagents';
 
 /** Event types in Claude Code's JSONL that carry no conversational content — UI/session bookkeeping. */
 const NON_MESSAGE_TYPES = new Set([
@@ -56,14 +87,29 @@ export function discoverSessionFiles(root: string = CLAUDE_CODE_STORAGE_ROOT): S
   const refs: SessionFileRef[] = [];
   for (const slug of readdirSync(root)) {
     const slugDir = join(root, slug);
-    let files: string[];
+    let entries: string[];
     try {
-      files = readdirSync(slugDir).filter((f) => f.endsWith('.jsonl'));
+      entries = readdirSync(slugDir);
     } catch {
       continue;
     }
-    for (const file of files) {
+    for (const file of entries.filter((f) => f.endsWith('.jsonl'))) {
       refs.push({ filePath: join(slugDir, file), slug, sessionId: basename(file, '.jsonl') });
+    }
+    // A session with sub-agents gets a folder of its own name holding them. The watcher already
+    // saw these files (it walks the tree); a full scan did not, so the two disagreed about what
+    // exists — which is how six sub-agents came to be conversations only the watcher had heard of.
+    for (const entry of entries) {
+      const subagentDir = join(slugDir, entry, SUBAGENT_DIR);
+      let agents: string[];
+      try {
+        agents = readdirSync(subagentDir).filter((f) => f.endsWith('.jsonl'));
+      } catch {
+        continue;
+      }
+      for (const file of agents) {
+        refs.push({ filePath: join(subagentDir, file), slug, sessionId: basename(file, '.jsonl'), parentSessionId: entry });
+      }
     }
   }
   return refs;
@@ -240,7 +286,13 @@ export function ingestSessionFile(
   // meaningless for project resolution — the real signal is the user-selected folder, if any.
   const defaultProjectId = opts.projectIdOverride ?? resolveClaudeSlug(db, registry, ref.slug, opts.chatGptProjectsCacheRoot);
   const existingThread = db.getThread(ref.sessionId);
-  const projectId = existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID ? existingThread.projectId : defaultProjectId;
+  // A sub-agent belongs wherever its parent belongs. Resolving it on its own would classify it by
+  // the instruction it was given, which describes a task, not a project.
+  const parentProjectId = ref.parentSessionId ? db.getThread(ref.parentSessionId)?.projectId : undefined;
+  const projectId =
+    existingThread && existingThread.projectId !== UNASSIGNED_PROJECT_ID
+      ? existingThread.projectId
+      : (parentProjectId && parentProjectId !== UNASSIGNED_PROJECT_ID ? parentProjectId : defaultProjectId);
   let sequence = existingThread ? db.getMessagesForThread(ref.sessionId).length : 0;
   let firstUserContent: string | undefined;
   let inserted = 0;
@@ -261,6 +313,7 @@ export function ingestSessionFile(
       createdAt: now,
       updatedAt: now,
       status: 'active',
+      parentThreadId: ref.parentSessionId,
     } as Thread);
   }
 
@@ -269,7 +322,10 @@ export function ingestSessionFile(
     if (!parsed) continue;
     if (parsed.role === 'user' && firstUserContent === undefined) firstUserContent = parsed.content;
 
-    const hash = computeMessageHash(parsed.role, parsed.content, parsed.thought, parsed.toolCalls, parsed.toolResults);
+    const hash = computeMessageHash({
+      threadId: ref.sessionId, timestamp: parsed.timestamp, role: parsed.role,
+      content: parsed.content, thought: parsed.thought, toolCalls: parsed.toolCalls, toolResults: parsed.toolResults,
+    });
     const message: Message = {
       id: parsed.uuid,
       threadId: ref.sessionId,
@@ -303,6 +359,7 @@ export function ingestSessionFile(
     createdAt: existingThread?.createdAt ?? latestTimestamp ?? now,
     updatedAt: latestTimestamp ?? now,
     status: 'active',
+    parentThreadId: ref.parentSessionId,
   } as Thread);
 
   if (projectId) db.touchProjectActivity(projectId, latestTimestamp ?? now);
@@ -338,5 +395,5 @@ export function storageRootExists(root: string = CLAUDE_CODE_STORAGE_ROOT): bool
 
 // Re-exported for the watch engine, which needs to know a file's slug from its path alone.
 export function refFromFilePath(filePath: string): SessionFileRef {
-  return { filePath, slug: basename(dirname(filePath)), sessionId: basename(filePath, '.jsonl') };
+  return refFromParts(filePath);
 }

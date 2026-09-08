@@ -1017,6 +1017,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
     return thread;
   });
 
+  /** The sub-agents this conversation spawned. Kept out of the project's thread list, reached here. */
+  app.get<{ Params: { id: string } }>('/api/threads/:id/subthreads', async (req, reply) => {
+    if (denyIfThreadHidden(req, reply, req.params.id)) return;
+    return db.getSubThreads(req.params.id);
+  });
+
   app.get<{ Params: { id: string }; Querystring: { offset?: string; limit?: string } }>(
     '/api/threads/:id/messages',
     async (req, reply) => {

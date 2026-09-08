@@ -58,7 +58,11 @@ function toCanonicalMessage(msg: ExportMessage, threadId: string, sequence: numb
   if (!content && thoughtParts.length === 0 && toolCalls.length === 0 && toolResults.length === 0) return null;
 
   const thought = thoughtParts.length ? thoughtParts.join('\n') : undefined;
-  const hash = computeMessageHash(role, content, thought, toolCalls.length ? toolCalls : undefined, toolResults.length ? toolResults : undefined);
+  const hash = computeMessageHash({
+    threadId, timestamp: msg.created_at, role, content, thought,
+    toolCalls: toolCalls.length ? toolCalls : undefined,
+    toolResults: toolResults.length ? toolResults : undefined,
+  });
   return {
     id: msg.uuid ?? createHash('sha256').update(`${threadId}-${sequence}`).digest('hex').slice(0, 16),
     threadId,
