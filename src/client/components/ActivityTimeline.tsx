@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ActivitySummary } from '../../core/activity.js';
 
 type Day = ActivitySummary['byDate'][number];
@@ -57,7 +57,7 @@ export function ActivityTimeline({
   const maxMs = useMemo(() => Math.max(1, ...series.map((d) => d.totalMs)), [series]);
   const svgRef = useRef<SVGSVGElement>(null);
   /** While dragging: the two ends in day indices, unordered until release. */
-  const [drag, setDrag] = useState<{ from: number; to: number; edge: 'new' | 'start' | 'end' } | null>(null);
+  const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const [hover, setHover] = useState<number | null>(null);
 
   const W = 1000;
@@ -81,33 +81,43 @@ export function ActivityTimeline({
 
   function indexFromEvent(e: { clientX: number }): number {
     const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect || series.length === 0) return 0;
+    // A zero width is not impossible: a hidden pane, a collapsed parent, printing. Dividing by it
+    // gives NaN, which survives Math.min/Math.max and indexes the series out of bounds — the
+    // handler then throws and the selection silently never happens.
+    if (!rect || !rect.width || series.length === 0) return 0;
     const x = ((e.clientX - rect.left) / rect.width) * W - PAD_LEFT;
-    return Math.max(0, Math.min(series.length - 1, Math.floor(x / band)));
+    const index = Math.floor(x / band);
+    if (!Number.isFinite(index)) return 0;
+    return Math.max(0, Math.min(series.length - 1, index));
   }
 
-  // Bound to the window rather than the SVG: a drag that leaves the chart — which is exactly what
-  // happens when you select towards an edge — must keep tracking, and must still commit on release.
-  useEffect(() => {
-    if (!drag) return;
-    const move = (e: PointerEvent) => setDrag((d) => (d ? { ...d, to: indexFromEvent(e) } : d));
+  /**
+   * Starts a drag, and listens for the rest of it on the window.
+   *
+   * The listeners go on immediately rather than through an effect watching the drag state. Keyed on
+   * state, they are only attached after React has re-rendered — so a press and release quicker than
+   * that renders is dropped, and the selection never happens. On the window rather than the SVG
+   * because a drag towards either edge leaves the chart and must keep tracking, and must still
+   * commit when the button comes up outside it.
+   */
+  function beginDrag(from: number, to: number): void {
+    setDrag({ from, to });
+    let latest = { from, to };
+    const move = (e: PointerEvent) => {
+      latest = { ...latest, to: indexFromEvent(e) };
+      setDrag(latest);
+    };
     const up = () => {
-      setDrag((d) => {
-        if (d) {
-          const a = Math.min(d.from, d.to);
-          const b = Math.max(d.from, d.to);
-          onSelect({ startDate: series[a].date, endDate: series[b].date });
-        }
-        return null;
-      });
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      setDrag(null);
+      const a = Math.min(latest.from, latest.to);
+      const b = Math.max(latest.from, latest.to);
+      onSelect({ startDate: series[a].date, endDate: series[b].date });
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    return () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-    };
-  }, [drag, series, onSelect]);
+  }
 
   if (series.length === 0) return null;
 
@@ -136,7 +146,7 @@ export function ActivityTimeline({
         aria-label={`Temps par jour du ${fmtDate(series[0].date)} au ${fmtDate(series[series.length - 1].date)}`}
         onPointerDown={(e) => {
           const i = indexFromEvent(e);
-          setDrag({ from: i, to: i, edge: 'new' });
+          beginDrag(i, i);
         }}
         onPointerMove={(e) => setHover(indexFromEvent(e))}
         onPointerLeave={() => setHover(null)}
@@ -199,8 +209,8 @@ export function ActivityTimeline({
                   className="cursor-ew-resize fill-accent"
                   onPointerDown={(e) => {
                     e.stopPropagation();
-                    // Grab the far edge as the anchor, so dragging this handle moves only this side.
-                    setDrag({ from: k === 0 ? shown.b : shown.a, to: k === 0 ? shown.a : shown.b, edge: k === 0 ? 'start' : 'end' });
+                    // The far edge is the anchor, so dragging this handle moves only this side.
+                    beginDrag(k === 0 ? shown.b : shown.a, k === 0 ? shown.a : shown.b);
                   }}
                 />
               </g>
