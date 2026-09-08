@@ -289,9 +289,14 @@ def temps_couts(img):
         "réponse.</li>"
         '</ul>'
         + banner('info', '💡',
-                 "<p>Le troisième encadré indique combien de messages ont vu leur estimation limitée par "
+                 "<p>Le dernier encadré indique combien de messages ont vu leur estimation limitée par "
                  "le temps écoulé. Plus ce nombre est élevé, plus le total repose sur de l'observation "
                  "plutôt que sur un calcul théorique.</p>")
+        + '<h2>Choisir une période</h2>'
+        + "<p>Le graphique <strong>Toute la période</strong> montre l'ensemble de l'historique, un jour "
+          "par barre, avec une échelle en heures à gauche. Glisse dessus pour choisir une période : "
+          "tout ce qui est au-dessus et en dessous se recalcule sur elle, y compris la répartition par "
+          "heure. Les deux poignées ajustent ensuite un bord à la fois, et un lien ramène à l'ensemble.</p>"
         + '<h2>Régler son rythme de frappe</h2>'
         "<p><b>Mon compte</b> → <b>Rythme de frappe</b>. La valeur par défaut est basse à dessein : elle "
         "sous-estime plutôt qu'elle ne surestime, ce qui est le bon sens quand le chiffre peut finir sur "

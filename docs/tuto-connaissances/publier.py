@@ -98,10 +98,24 @@ def televerser_images(article: int) -> dict[str, str]:
     for chemin in sorted(IMAGES.glob('*.png')):
         existing = call('ir.attachment', 'search_read',
                         domain=[['name', '=', chemin.name], ['res_model', '=', 'knowledge.article']],
-                        fields=['id', 'access_token'], limit=1)
-        if existing and existing[0].get('access_token'):
+                        fields=['id', 'access_token', 'file_size'], limit=1)
+        # Une capture qui a changé doit remplacer la précédente, pas la laisser en place. Sans cette
+        # comparaison, un tutoriel republié après une refonte de l'interface garde les images de
+        # l'ancienne : le texte décrit un écran, la capture en montre un autre.
+        if existing and existing[0].get('access_token') and existing[0].get('file_size') == chemin.stat().st_size:
             att = existing[0]
-            print(f'    déjà en place {chemin.name}')
+            print(f'    inchangée     {chemin.name}')
+        elif existing and existing[0].get('access_token') and APPLY:
+            att = existing[0]
+            print(f"    remplacement  {chemin.name} ({chemin.stat().st_size // 1024} ko)")
+            call('ir.attachment', 'write', ids=[att['id']],
+                 vals={'raw': base64.b64encode(chemin.read_bytes()).decode()})
+            relu = call('ir.attachment', 'read', ids=[att['id']], fields=['file_size'])[0]
+            if relu.get('file_size') != chemin.stat().st_size:
+                sys.exit(f"    {chemin.name} : remplacement non confirmé ({relu.get('file_size')} octets), arrêt.")
+        elif existing and existing[0].get('access_token'):
+            att = existing[0]
+            print(f'    remplacera    {chemin.name}')
         elif not APPLY:
             print(f'    téléversera   {chemin.name} ({chemin.stat().st_size // 1024} ko)')
             urls[chemin.name] = f'{HOST}/web/image/0?access_token=SIMULATION'
