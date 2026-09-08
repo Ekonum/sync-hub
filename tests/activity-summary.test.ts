@@ -47,7 +47,7 @@ describe('getActivitySummary', () => {
     exchange('t1', 0, '2026-09-01T09:00:00.000Z', 'Bonjour', 20);
     db.insertMessage({
       id: 't1-u2', threadId: 't1', projectId: 'p1', sourceEngine: 'claude-code', role: 'user',
-      content: 'x'.repeat(4000), timestamp: '2026-09-01T09:00:30.000Z', sequence: 2, hash: 'h-t1-u2',
+      content: 'mot '.repeat(1000), timestamp: '2026-09-01T09:00:30.000Z', sequence: 2, hash: 'h-t1-u2',
     });
 
     const s = db.getActivitySummary({});

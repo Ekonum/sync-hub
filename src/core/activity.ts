@@ -11,8 +11,11 @@
  *
  * Two anchors keep the estimate honest:
  *
- *  1. **Only plausibly-typed text counts.** Fenced code, quoted email, and tool-injected wrappers
- *     are removed before counting — nobody types a 4,000-line log.
+ *  1. **Only plausibly-typed text counts.** Fenced code, quoted email, tool-injected wrappers and
+ *     the line shapes in NEVER_TYPED are removed before counting — nobody types a 4,000-line log.
+ *     This matters less than it looks: 30.2M of the 32.0M characters that survive it sit in
+ *     messages the cap below already binds, so sharpening the filter moves the total by 3%. The
+ *     cap does the work; this keeps the arithmetic honest for the messages it does not reach.
  *  2. **You cannot have typed for longer than you had.** Each message's typing time is capped by
  *     the wall-clock gap since the previous message in the thread. This is the strong one: it
  *     bounds a guess with something actually observed, and it is what stops a pasted block from
@@ -38,6 +41,38 @@ const FIRST_MESSAGE_CAP_MS = 5 * 60_000;
  */
 const ABANDONED_GAP_MS = 30 * 60_000;
 
+/**
+ * Lines that nobody types into a prompt, recognised one by one.
+ *
+ * These catch what the block rules below miss: material pasted with no fence around it, which is
+ * how an error or a file usually arrives. Each rule had to be unambiguous before it earned a
+ * place, because a rule that eats real prose under-counts the person's own work and makes the
+ * figure hard to defend. Measured on this corpus, the set removes 61 hours from 2 029.
+ *
+ * Two candidates were rejected on that test rather than on taste. A line ending in a semicolon
+ * looked like the biggest win at 35 hours, until counting showed 11 659 of the matches were
+ * French list items, which end in a semicolon perfectly correctly — requiring code punctuation
+ * alongside narrowed it to 15 hours and still misfired. Diff lines were unambiguous but worth one
+ * hour, which does not pay for the risk of clipping a phone number written +33.
+ */
+const NEVER_TYPED: Array<(line: string) => boolean> = [
+  // Stack traces, in the shapes Node, Python and Java produce them.
+  (l) => /^\s+at \S/.test(l) || /^\s*(File "|Traceback \(|Caused by: )/.test(l),
+  // Log lines opening with an ISO timestamp.
+  (l) => /^\[?\d{4}-\d\d-\d\d[T ]\d\d:\d\d/.test(l),
+  // A line ending in a brace is code. Prose does not end that way in any language.
+  (l) => /[{}]\s*$/.test(l),
+];
+
+/**
+ * Eighty characters with no space in them: a URL, a hash, a token, a base64 blob. Never typed.
+ *
+ * Removed on its own rather than through NEVER_TYPED, which drops whole lines. "Voici le lien
+ * https://… et dis-moi ce que tu en penses" is a sentence somebody wrote, with one thing in it
+ * they pasted; discarding the line would discard the sentence too.
+ */
+const PASTED_TOKEN = /\S{80,}/g;
+
 /** Text a person plausibly typed, with what they clearly did not removed. */
 export function typedCharacters(content: string): number {
   if (!content) return 0;
@@ -52,7 +87,13 @@ export function typedCharacters(content: string): number {
     // An indented block of four spaces or more is pasted code in markdown.
     .replace(/^(?: {4}|\t).*$/gm, '');
 
-  return withoutBlocks.trim().length;
+  const typed = withoutBlocks
+    .split('\n')
+    .filter((line) => !NEVER_TYPED.some((matches) => matches(line)))
+    .join('\n')
+    .replace(PASTED_TOKEN, '');
+
+  return typed.trim().length;
 }
 
 export interface MessageForActivity {

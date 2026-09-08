@@ -33,6 +33,38 @@ describe('typedCharacters', () => {
     const content = ['Voici la trace :', '    at Object.foo (/app/x.js:1:1)'.repeat(50)].join('\n');
     expect(typedCharacters(content)).toBeLessThan(30);
   });
+
+  it('does not count a stack trace pasted with no fence around it', () => {
+    // How an error actually arrives in a prompt: pasted bare, no ``` anywhere.
+    const trace = Array.from({ length: 30 }, (_, i) => `  at Object.step${i} (/app/src/thing.js:${i}:12)`);
+    const content = ['Ça plante, tu peux regarder ?', 'TypeError: cannot read x', ...trace].join('\n');
+    expect(typedCharacters(content)).toBeLessThan(60);
+  });
+
+  it('does not count bare log output', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `2026-09-08T06:${String(i).padStart(2, '0')}:00Z  requête traitée en 12ms`);
+    expect(typedCharacters(['Voilà les logs', ...lines].join('\n'))).toBe('Voilà les logs'.length);
+  });
+
+  it('does not count a long unbroken token', () => {
+    // A URL, a hash, a base64 blob: eighty characters without a space is never typed.
+    const content = 'Le lien https://example.com/' + 'a'.repeat(200) + ' te dira tout';
+    // The sentence survives; only the token goes. Dropping the whole line would drop the sentence.
+    expect(typedCharacters(content)).toBe('Le lien  te dira tout'.length);
+  });
+
+  it('still counts French prose that merely looks structured', () => {
+    // The rules that would have caught these were dropped on purpose: a French list item ends in
+    // a semicolon quite correctly, and a phone number starts with a plus. Under-counting the
+    // person's own writing is the failure mode that makes the billing figure indefensible.
+    const content = [
+      'Trois choses à faire :',
+      '- reprendre le calendrier ;',
+      '- vérifier les 44 divergences ;',
+      '- rappeler au +33 6 12 34 56 78.',
+    ].join('\n');
+    expect(typedCharacters(content)).toBe(content.length);
+  });
 });
 
 describe('durationsForMessage — typing', () => {
@@ -48,17 +80,17 @@ describe('durationsForMessage — typing', () => {
   it('never claims more typing than the time that actually passed', () => {
     // 4,000 characters would be 100 minutes; only 30 seconds elapsed. This is the anchor that
     // takes the corpus estimate from 13,198 hours to a plausible 2,012.
-    const d = user('x'.repeat(4000), 30_000);
+    const d = user('mot '.repeat(1000), 30_000);
     expect(d.typingMs).toBe(30_000);
   });
 
   it('treats a long silence as absence, not as an hour of typing', () => {
-    const d = user('x'.repeat(100_000), 6 * 60 * 60_000);
+    const d = user('mot '.repeat(25_000), 6 * 60 * 60_000);
     expect(d.typingMs).toBeLessThanOrEqual(30 * 60_000);
   });
 
   it('caps the first message of a thread, which has nothing to measure against', () => {
-    const d = user('x'.repeat(100_000), null);
+    const d = user('mot '.repeat(25_000), null);
     expect(d.typingMs).toBe(5 * 60_000);
   });
 
