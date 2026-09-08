@@ -68,6 +68,19 @@ export function ActivityView({ projects }: { projects: Project[] }) {
     [summary],
   );
 
+  const maxDateMs = useMemo(
+    () => (summary ? Math.max(1, ...summary.byDate.map((d) => d.typingMs + d.thinkingMs)) : 1),
+    [summary],
+  );
+
+  const isSingleDay = !!startDate && startDate === endDate;
+
+  /** Narrows both ends of the range to one day — the hour chart below then describes that day. */
+  function zoomToDay(date: string): void {
+    setStartDate(date);
+    setEndDate(date);
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 overflow-y-auto p-6">
       <div>
@@ -173,10 +186,63 @@ export function ActivityView({ projects }: { projects: Project[] }) {
             </div>
           </div>
 
+          {/* Day by day, and the way into a single one. Reading a total for a month is not the
+              same as being able to answer "what did the 14th consist of", which is the question a
+              client actually asks — so a day is a button, not a label. */}
+          {summary.byDate.length > 1 && (
+            <div className="rounded-xl border border-border bg-card p-6">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 className="text-base font-semibold text-foreground">Jour par jour</h2>
+                <p className="text-sm text-muted-foreground">Cliquer un jour pour n'afficher que celui-là.</p>
+              </div>
+              <div className="mt-6 flex h-48 items-stretch gap-1 overflow-x-auto">
+                {summary.byDate.map((d) => {
+                  const total = d.typingMs + d.thinkingMs;
+                  const height = Math.round((total / maxDateMs) * 100);
+                  return (
+                    <button
+                      key={d.date}
+                      onClick={() => zoomToDay(d.date)}
+                      title={`${d.date} — ${hours(total)}`}
+                      className="group flex h-full min-w-[10px] flex-1 flex-col items-center justify-end gap-2"
+                    >
+                      <div
+                        className="w-full rounded-xl bg-accent/70 transition-colors group-hover:bg-accent"
+                        style={{ height: `${Math.max(total > 0 ? 2 : 0, height)}%` }}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {summary.byDate[0].date} → {summary.byDate[summary.byDate.length - 1].date}
+              </p>
+            </div>
+          )}
+
+          {isSingleDay && (
+            <div className="flex items-center gap-4 rounded-xl border border-border bg-card px-6 py-4">
+              <p className="text-sm text-foreground">
+                Journée du {new Date(`${startDate}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              </p>
+              <button
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="ml-auto text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Revenir à toute la période
+              </button>
+            </div>
+          )}
+
           {/* Working pattern by hour: the shape of a day, which is what makes a timesheet
-              believable when a client asks. */}
+              believable when a client asks. Zoomed to one day, it is that day's shape. */}
           <div className="rounded-xl border border-border bg-card p-6">
-            <h2 className="text-base font-semibold text-foreground">Répartition par heure</h2>
+            <h2 className="text-base font-semibold text-foreground">
+              {isSingleDay ? 'Heure par heure, ce jour-là' : 'Répartition par heure'}
+            </h2>
             {peakHour && (
               <p className="mt-2 text-sm text-muted-foreground">
                 Heure la plus chargée : {String(peakHour.hour).padStart(2, '0')}h — {hours(peakHour.typingMs + peakHour.thinkingMs)}

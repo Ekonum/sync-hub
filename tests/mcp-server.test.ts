@@ -98,6 +98,7 @@ describe('sync-hub MCP server', () => {
       'get_project_timeline',
       'get_thread',
       'get_thread_link_updates',
+      'get_time_spent',
       'link_threads',
       'list_projects',
       'list_threads',
@@ -113,6 +114,23 @@ describe('sync-hub MCP server', () => {
     const text = (result.content as any[])[0].text as string;
     expect(text).toContain('Reprends cette conversation précise.');
     expect(text).toContain('Fil'); // includes the thread title for context
+  });
+
+  it('get_time_spent answers day by day, and hour by hour when asked about one day', async () => {
+    // The question a client asks is not "how many hours in March" but "what was the 14th".
+    db.insertMessage(message({ id: 'm1', hash: 'h1', sequence: 0, role: 'user', content: 'Une question posée ce jour-là', timestamp: '2026-03-14T09:30:00.000Z' }));
+    db.insertMessage(message({ id: 'm2', hash: 'h2', sequence: 1, role: 'assistant', content: 'La réponse', timestamp: '2026-03-14T09:32:00.000Z' }));
+    db.insertMessage(message({ id: 'm3', hash: 'h3', sequence: 2, role: 'user', content: 'Une autre, un autre jour', timestamp: '2026-03-15T14:00:00.000Z' }));
+
+    const wide = (await client.callTool({ name: 'get_time_spent', arguments: {} })).content as any[];
+    expect(wide[0].text).toContain('Jour par jour');
+    expect(wide[0].text).toContain('2026-03-14');
+    expect(wide[0].text).toContain('2026-03-15');
+
+    const day = (await client.callTool({ name: 'get_time_spent', arguments: { startDate: '2026-03-14', endDate: '2026-03-14' } })).content as any[];
+    expect(day[0].text).toContain('Heure par heure le 2026-03-14');
+    expect(day[0].text).toContain('09h');
+    expect(day[0].text).not.toContain('2026-03-15');
   });
 
   it('get_thread reports an error for an unknown thread id', async () => {

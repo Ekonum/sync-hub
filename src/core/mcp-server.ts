@@ -91,6 +91,70 @@ export function createMcpServer(
   const server = new McpServer({ name: 'sync-hub', version: '0.1.0' });
 
   server.registerTool(
+    'get_time_spent',
+    {
+      title: 'Temps passé, par jour ou par heure',
+      description:
+        "Temps de travail sur une période : rédaction (estimée, plafonnée par le temps réellement écoulé) et " +
+        "attente des réponses de l'IA (mesurée). Sans dates, renvoie le total et le détail jour par jour. " +
+        "Avec `startDate` égal à `endDate`, descend à l'heure — c'est ainsi qu'on répond à « en quoi a consisté " +
+        "le 14 ? ». Restreignable à un projet, une catégorie ou un fil. Les sous-agents ne sont jamais comptés : " +
+        "leurs tours sont une IA qui s'instruit elle-même, pas quelqu'un qui tape.",
+      inputSchema: {
+        project: z.string().optional().describe('Id ou nom du projet'),
+        category: z.string().optional().describe('Catégorie de projet (ekonum, client, perso…)'),
+        threadId: z.string().optional().describe('Restreindre à un seul fil'),
+        startDate: z.string().optional().describe('Date de début, AAAA-MM-JJ (incluse)'),
+        endDate: z.string().optional().describe('Date de fin, AAAA-MM-JJ (incluse)'),
+      },
+    },
+    logged(db, 'get_time_spent', async ({ project: projectRef, category, threadId, startDate, endDate }) => {
+      let projectId: string | undefined;
+      if (projectRef) {
+        const project = resolveProject(db, projectRef);
+        if (!project) return { content: [{ type: 'text', text: projectNotFoundText(db, projectRef) }], isError: true };
+        projectId = project.id;
+      }
+      const s = db.getActivitySummary({
+        projectId,
+        category,
+        threadId,
+        startDate,
+        endDate,
+        keystrokesPerMinute: db.getKeystrokesPerMinute(undefined),
+      });
+      if (s.messageCount === 0) return { content: [{ type: 'text', text: 'Aucun échange sur cette sélection.' }] };
+
+      const h = (ms: number) => `${(ms / 3_600_000).toFixed(2)} h`;
+      const lines = [
+        `Rédaction ${h(s.totalTypingMs)} (estimée à ${s.keystrokesPerMinute} frappes/min) · Réponse IA ${h(s.totalThinkingMs)} (mesurée)`,
+        `${s.messageCount} messages, dont ${s.cappedMessageCount} où le temps écoulé a limité l'estimation — mesurés plutôt que déduits.`,
+        '',
+      ];
+      // One day asked for means the question is about that day's shape, so answer in hours.
+      if (startDate && startDate === endDate) {
+        lines.push(`Heure par heure le ${startDate} :`);
+        for (const b of s.byHour) {
+          if (b.messages === 0) continue;
+          lines.push(`  ${String(b.hour).padStart(2, '0')}h  ${h(b.typingMs + b.thinkingMs).padStart(8)}  ${b.messages} messages`);
+        }
+      } else {
+        lines.push('Jour par jour :');
+        for (const b of s.byDate) {
+          lines.push(`  ${b.date}  ${h(b.typingMs + b.thinkingMs).padStart(8)}  ${b.messages} messages`);
+        }
+        if (s.byProject.length > 1) {
+          lines.push('', 'Par projet :');
+          for (const b of s.byProject.slice(0, 20)) {
+            lines.push(`  ${b.name}  ${h(b.typingMs + b.thinkingMs).padStart(8)}`);
+          }
+        }
+      }
+      return { content: [{ type: 'text', text: lines.join('\n') }] };
+    }),
+  );
+
+  server.registerTool(
     'get_project_timeline',
     {
       title: 'Chronologie verbatim d\'un projet',
