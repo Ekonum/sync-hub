@@ -105,3 +105,22 @@ Plus loin : un outil qui lit tout ça par le MCP, plus les autres sources (les a
 l'historique du téléphone), et **remplit les feuilles de temps tout seul**. Le MCP expose déjà
 `get_time_spent` (jour par jour, heure par heure) et les coûts ; ce qui manque est le rapprochement
 avec les tâches Odoo et une source d'activité hors clavier.
+
+## Le temps d'une journée peut dépasser 24 h
+
+Constaté le 2026-09-08 : trois jours du corpus dépassent 24 h, dont le 31 août à **35,5 h**, et
+onze jours dépassent 16 h.
+
+Ce n'est pas une erreur de calcul, c'est le modèle. Les durées sont additionnées fil par fil ;
+quand deux conversations tournent en parallèle — Claude Code et Codex ensemble, ou plusieurs
+sessions du même outil — leurs attentes se chevauchent dans le temps réel et sont comptées deux
+fois. La rédaction, plafonnée par l'écart écoulé, subit le même chevauchement.
+
+Tant que ça reste un indicateur d'usage, c'est acceptable et ça se dit. Dès qu'on refacture au
+taux horaire, ça ne l'est plus : personne ne facture 35,5 h pour un mardi.
+
+Ce qu'il faudra : fusionner les intervalles au lieu d'additionner les durées. Chaque tour devient
+un segment [début, fin] en temps réel, on prend l'union par jour, et on répartit ensuite entre
+projets — la répartition étant elle-même une décision à prendre, puisqu'un instant couvert par deux
+projets doit aller quelque part. À trancher avec Robin avant d'écrire quoi que ce soit, et à faire
+**avant** le taux horaire décrit plus haut, sans quoi la première facture générée sera fausse.
