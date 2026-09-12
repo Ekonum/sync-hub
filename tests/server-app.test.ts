@@ -420,6 +420,30 @@ describe('sync-hub HTTP API', () => {
     expect(res.json().error).toBe('ordered_ids_required');
   });
 
+  it('serves the whole-corpus costs from the daily snapshot, and a filtered one live', async () => {
+    const { refreshStatsSnapshots } = await import('../src/core/stats-snapshot.js');
+    refreshStatsSnapshots(db);
+
+    const whole = await app.inject({ method: 'GET', url: '/api/costs' });
+    expect(whole.json().computedAt).toBeTruthy();
+
+    // A narrowed figure is what ends up on an invoice, so it is computed for the request rather
+    // than read from this morning's aggregate.
+    const filtered = await app.inject({ method: 'GET', url: '/api/costs?projectId=proj-a' });
+    expect(filtered.statusCode).toBe(200);
+    expect(filtered.json().computedAt).toBeUndefined();
+  });
+
+  it('POST /api/stats/refresh recomputes on demand', async () => {
+    const before = await app.inject({ method: 'GET', url: '/api/costs' });
+    expect(before.json().computedAt).toBeUndefined(); // nothing stored yet
+
+    expect((await app.inject({ method: 'POST', url: '/api/stats/refresh' })).statusCode).toBe(200);
+
+    const after = await app.inject({ method: 'GET', url: '/api/costs' });
+    expect(after.json().computedAt).toBeTruthy();
+  });
+
   it('POST /api/sync/rescan triggers the injected rescan function', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
     expect(res.statusCode).toBe(200);

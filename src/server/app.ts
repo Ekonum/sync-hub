@@ -22,7 +22,9 @@ import * as claudeCode from '../core/adapters/claude-code.js';
 import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
-import { computeCostSummary } from '../core/cost.js';
+import { computeCostSummary, type CostSummary } from '../core/cost.js';
+import { COSTS_SNAPSHOT, TIMELINE_SNAPSHOT, isWholeCorpus, refreshStatsSnapshots } from '../core/stats-snapshot.js';
+import type { ActivitySummary } from '../core/activity.js';
 import { runPullCycle } from '../core/sync-pull-client.js';
 import {
   formatThreadAsMarkdown,
@@ -802,6 +804,15 @@ export function createApp(deps: AppDeps): FastifyInstance {
    */
   app.get<{ Querystring: { projectId?: string; category?: string } }>('/api/activity/overview', async (req) => {
     const rate = db.getKeystrokesPerMinute(req.user?.id);
+    // Same reasoning as /api/costs: unfiltered comes from the snapshot, narrowed is computed.
+    if (!req.query.projectId && !req.query.category) {
+      const snapshot = db.getStatsSnapshot<{ byDate: ActivitySummary['byDate']; keystrokesPerMinute: number }>(TIMELINE_SNAPSHOT);
+      // A snapshot taken at another typing pace would draw bars that contradict the totals beside
+      // them, so it is only used when the pace still matches.
+      if (snapshot && snapshot.payload.keystrokesPerMinute === rate) {
+        return { byDate: snapshot.payload.byDate, computedAt: snapshot.computedAt };
+      }
+    }
     return memoised(`activity-overview:${rate}:${JSON.stringify(req.query)}`, () => ({
       byDate: db.getActivitySummary({
         projectId: req.query.projectId,
@@ -809,6 +820,12 @@ export function createApp(deps: AppDeps): FastifyInstance {
         keystrokesPerMinute: rate,
       }).byDate,
     }));
+  });
+
+  /** Recomputes the daily snapshots now — what the refresh control on the page calls. */
+  app.post('/api/stats/refresh', async () => {
+    refreshStatsSnapshots(db);
+    return { ok: true, refreshedAt: new Date().toISOString() };
   });
 
   /** The typing pace the estimate is based on — deliberately the user's to set, and to lower. */
@@ -903,18 +920,22 @@ export function createApp(deps: AppDeps): FastifyInstance {
       endDate?: string;
       eurRate?: string;
     };
-  }>('/api/costs', async (req) =>
-    memoised(`costs:${JSON.stringify(req.query)}`, () =>
-      computeCostSummary(db, {
-        projectId: req.query.projectId,
-        threadId: req.query.threadId,
-        engine: req.query.engine,
-        startDate: req.query.startDate,
-        endDate: req.query.endDate,
-        eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
-      }),
-    ),
-  );
+  }>('/api/costs', async (req) => {
+    const scope = {
+      projectId: req.query.projectId,
+      threadId: req.query.threadId,
+      engine: req.query.engine,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
+    };
+    // The whole-corpus answer is the expensive one and the one every page load asks for, so it is
+    // served from the daily snapshot. A narrowed scope reads far fewer messages and is computed
+    // live, which keeps a filtered figure exact rather than as of this morning.
+    const snapshot = isWholeCorpus(scope) ? db.getStatsSnapshot<CostSummary>(COSTS_SNAPSHOT) : null;
+    if (snapshot) return { ...snapshot.payload, computedAt: snapshot.computedAt };
+    return memoised(`costs:${JSON.stringify(req.query)}`, () => computeCostSummary(db, scope));
+  });
 
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     if (denyIfProjectHidden(req, reply, req.params.id)) return;

@@ -212,8 +212,12 @@ export const api = {
     if (scope?.projectId) params.set('projectId', scope.projectId);
     if (scope?.category) params.set('category', scope.category);
     const qs = params.toString();
-    return jsonFetch<{ byDate: ActivitySummary['byDate'] }>(`/api/activity/overview${qs ? `?${qs}` : ''}`);
+    return jsonFetch<{ byDate: ActivitySummary['byDate']; computedAt?: string }>(
+      `/api/activity/overview${qs ? `?${qs}` : ''}`,
+    );
   },
+  /** Recomputes the daily aggregates now, rather than waiting for the next pass. */
+  refreshStats: () => jsonFetch<{ ok: true; refreshedAt: string }>('/api/stats/refresh', { method: 'POST' }),
   setTypingPace: (keystrokesPerMinute: number | null) =>
     jsonFetch<{ ok: true; keystrokesPerMinute: number }>('/api/account/typing-pace', {
       method: 'PUT',

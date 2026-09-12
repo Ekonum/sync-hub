@@ -225,6 +225,20 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 -- the local instance runs without accounts and presents a synthetic user, so an UPDATE against
 -- users matched no row and the setting silently did nothing while reporting success.
 -- (No backticks in here: this whole schema is a JS template literal.)
+-- Aggregates that walk the whole corpus, kept from one day to the next.
+--
+-- Computing the cost summary or the daily time series reads every message: 7.6 s and 5.1 s
+-- respectively on this store, and the in-process memo they had was keyed on the ingest counter,
+-- which moves with every message — so it never held while anyone was working, which is exactly
+-- when the dashboard is open. Refreshed once a day and on demand; the page says when.
+CREATE TABLE IF NOT EXISTS stats_snapshot (
+  key TEXT PRIMARY KEY,
+  payload TEXT NOT NULL,
+  computed_at TEXT NOT NULL,
+  /** Message count at the time, so the page can say how far behind the snapshot is. */
+  message_count INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_settings (
   user_id TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -800,6 +814,38 @@ export class Db {
         .map(([projectId, v]) => ({ projectId, name: projectNames.get(projectId) ?? projectId, ...v }))
         .sort((a, b) => b.typingMs + b.thinkingMs - (a.typingMs + a.thinkingMs)),
     };
+  }
+
+  /**
+   * The stored copy of an expensive aggregate, or null when there is none yet.
+   *
+   * Deliberately returns whatever is there, however old, rather than deciding for the caller: a
+   * figure from this morning shown as "arrêté à 8 h" is useful, and one recomputed on every page
+   * load is what made the dashboard take half a minute.
+   */
+  getStatsSnapshot<T>(key: string): { payload: T; computedAt: string; messageCount: number } | null {
+    const row = this.raw
+      .prepare('SELECT payload, computed_at, message_count FROM stats_snapshot WHERE key = ?')
+      .get(key) as any;
+    if (!row) return null;
+    try {
+      return { payload: JSON.parse(row.payload) as T, computedAt: row.computed_at, messageCount: row.message_count };
+    } catch {
+      // A truncated write is not worth crashing a page load over — recompute instead.
+      return null;
+    }
+  }
+
+  setStatsSnapshot(key: string, payload: unknown): void {
+    this.raw
+      .prepare(
+        `INSERT INTO stats_snapshot (key, payload, computed_at, message_count)
+         VALUES (?, ?, ?, (SELECT count(*) FROM messages))
+         ON CONFLICT(key) DO UPDATE SET payload = excluded.payload,
+                                        computed_at = excluded.computed_at,
+                                        message_count = excluded.message_count`,
+      )
+      .run(key, JSON.stringify(payload), new Date().toISOString());
   }
 
   /** Typing pace for one person, falling back to the deliberately low default. */

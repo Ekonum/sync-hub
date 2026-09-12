@@ -14,6 +14,7 @@ import * as antigravity from '../core/adapters/antigravity.js';
 import { ingestAllMemories } from '../core/adapters/memories.js';
 import { ingestClaudeExport } from '../core/adapters/claude-export.js';
 import { ingestChatGptExport } from '../core/adapters/chatgpt-export.js';
+import { refreshStatsSnapshots, snapshotsAreStale } from '../core/stats-snapshot.js';
 import { runPushCycle } from '../core/sync-push-client.js';
 import { runPullCycle } from '../core/sync-pull-client.js';
 import { createApp } from './app.js';
@@ -140,6 +141,32 @@ function scheduleSync(): void {
   syncTimer = setTimeout(syncNow, 15_000);
 }
 
+/**
+ * The daily pass over the expensive aggregates.
+ *
+ * Once a day is what Robin asked for and what the figures warrant: they describe months of work,
+ * so a total that is a few hours old costs nothing, while recomputing 7.6 s of cost summary on
+ * every page load cost the dashboard. Run at startup only when what is stored is stale, so
+ * restarting a dozen times in an afternoon does not recompute a dozen times.
+ */
+let statsTimer: ReturnType<typeof setInterval> | undefined;
+
+function refreshStats(): void {
+  const started = Date.now();
+  try {
+    refreshStatsSnapshots(db);
+    console.log(`sync-hub: statistiques recalculées en ${((Date.now() - started) / 1000).toFixed(0)} s.`);
+  } catch (err) {
+    // A failed aggregation must not take the daemon with it: the previous snapshot stays served.
+    console.error('sync-hub: recalcul des statistiques en échec', err);
+  }
+}
+
+function startStatsSchedule(): void {
+  statsTimer = setInterval(refreshStats, 24 * 60 * 60_000);
+  statsTimer.unref?.(); // never hold the process open on its own account
+}
+
 /** A floor under the ingest-driven schedule above. Guarantees regular pull/push even without local activity. */
 function startSyncInterval(): void {
   if (!REMOTE_URL || !REMOTE_TOKEN) return;
@@ -220,13 +247,23 @@ app.log.info(`sync-hub écoute sur ${address}`);
 // Deliberately after listen() and deliberately not awaited: the first run on a real history takes
 // minutes, and there is no reason to keep the dashboard dark for it.
 void fullScanProgressively()
-  .then(() => scheduleSync())
+  .then(() => {
+    scheduleSync();
+    // Only when what is stored is stale: a restart should not redo eight seconds of aggregation
+    // it already did an hour ago.
+    // Run at startup only when what is stored is stale, so restarting a dozen times in an
+    // afternoon does not recompute a dozen times. And after the scan rather than during it:
+    // aggregating over a corpus still being ingested stores a figure already wrong on arrival.
+    if (snapshotsAreStale(db)) refreshStats();
+    startStatsSchedule();
+  })
   .catch((err) => console.error('sync-hub: scan initial en échec', err));
 
 async function shutdown(): Promise<void> {
   if (syncTimer) clearTimeout(syncTimer);
   if (pointerTimer) clearTimeout(pointerTimer);
   if (syncInterval) clearInterval(syncInterval);
+  if (statsTimer) clearInterval(statsTimer);
   await watchHandle.close();
   await app.close();
   db.close();

@@ -23,6 +23,7 @@ import type {
 } from '../../core/cost.js';
 import { UNASSIGNED_PROJECT_ID } from '../../types.js';
 import { api } from '../lib/api.js';
+import { SnapshotNotice } from './SnapshotNotice.js';
 
 type MetricMode = 'EUR' | 'USD' | 'TOKENS';
 type TimePeriod = '7d' | '30d' | '90d' | '1y' | 'all' | 'custom';
@@ -86,6 +87,8 @@ export function CostsView({ projects }: { projects: Project[] }) {
   const [dateSort, setDateSort] = useState<{ key: keyof DateCostPoint; asc: boolean }>({ key: 'date', asc: false });
 
   const [summary, setSummary] = useState<CostSummary | null>(null);
+  /** Bumped by the recompute control, to refetch what the daily pass has just rebuilt. */
+  const [refreshToken, setRefreshToken] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
 
   // Calculate date boundaries based on period quick-select
@@ -126,7 +129,7 @@ export function CostsView({ projects }: { projects: Project[] }) {
       .catch(() => {
         setLoading(false);
       });
-  }, [projectId, engine, startDate, endDate]);
+  }, [projectId, engine, startDate, endDate, refreshToken]);
 
   const visibleProjects = useMemo(() => {
     return projects.filter((p) => p.id !== UNASSIGNED_PROJECT_ID && !p.archived);
@@ -505,9 +508,13 @@ export function CostsView({ projects }: { projects: Project[] }) {
               while quietly ignoring unpriced models and 62k archived messages — the angle blind
               spot that made costs look like they began in May. */}
           <div className="rounded-xl border border-border bg-card px-6 py-4 shadow-xs">
-            <div className="flex items-center gap-2 mb-4">
-              <Info className="h-4 w-4 text-accent" />
-              <h3 className="text-sm font-semibold text-foreground">Provenance des chiffres</h3>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 text-accent" />
+                <h3 className="text-sm font-semibold text-foreground">Provenance des chiffres</h3>
+              </div>
+              {/* Where the figures come from is exactly where their age belongs. */}
+              <SnapshotNotice computedAt={summary.computedAt} onRefreshed={() => setRefreshToken((t) => t + 1)} />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="rounded-xl border border-border/60 bg-background/50 p-4">

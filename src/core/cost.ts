@@ -71,6 +71,11 @@ export interface CostScope {
 }
 
 export interface CostSummary {
+  /**
+   * When these figures were computed, on the answers that come from the daily snapshot.
+   * Absent when the answer was computed for this request — a narrowed scope always is.
+   */
+  computedAt?: string;
   totalCostUsd: number;
   totalCostEur: number;
   totalTokens: number;

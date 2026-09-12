@@ -4,6 +4,7 @@ import type { Project } from '../../types.js';
 import type { ActivitySummary } from '../../core/activity.js';
 import { api } from '../lib/api.js';
 import { ActivityTimeline } from './ActivityTimeline.js';
+import { SnapshotNotice } from './SnapshotNotice.js';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -33,6 +34,9 @@ export function ActivityView({ projects }: { projects: Project[] }) {
   /** The whole corpus day by day. Fetched apart from the summary so that brushing a period out of
    * it does not redraw the very chart being brushed. */
   const [overview, setOverview] = useState<ActivitySummary['byDate']>([]);
+  const [overviewAt, setOverviewAt] = useState<string | undefined>();
+  /** Bumped by the recompute control, to refetch what the daily pass has just rebuilt. */
+  const [refreshToken, setRefreshToken] = useState(0);
   const [loading, setLoading] = useState(true);
   const [projectId, setProjectId] = useState('');
   const [category, setCategory] = useState('');
@@ -67,12 +71,16 @@ export function ActivityView({ projects }: { projects: Project[] }) {
     let cancelled = false;
     api
       .activityOverview({ projectId: projectId || undefined, category: category || undefined })
-      .then((r) => !cancelled && setOverview(r.byDate))
+      .then((r) => {
+        if (cancelled) return;
+        setOverview(r.byDate);
+        setOverviewAt(r.computedAt);
+      })
       .catch(() => !cancelled && setOverview([]));
     return () => {
       cancelled = true;
     };
-  }, [projectId, category]);
+  }, [projectId, category, refreshToken]);
 
   const categories = useMemo(
     () => [...new Set(projects.map((p) => p.category).filter((c): c is string => !!c))].sort(),
@@ -209,7 +217,8 @@ export function ActivityView({ projects }: { projects: Project[] }) {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-6">
+          <div className="stack rounded-xl border border-border bg-card p-6">
+            <SnapshotNotice computedAt={overviewAt} onRefreshed={() => setRefreshToken((t) => t + 1)} />
             <ActivityTimeline
               days={overview}
               startDate={startDate}
