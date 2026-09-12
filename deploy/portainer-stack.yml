@@ -26,14 +26,6 @@ services:
       SYNC_HUB_ACCESS_TEAM_DOMAIN: "robinjoseph.cloudflareaccess.com"
       SYNC_HUB_ACCESS_AUD: "fdba50177091c1595e55827d9ad0f9dbd74267d578e6a9fba169e85d150c5cb8"
       SYNC_HUB_ACCESS_ALLOWED_DOMAINS: "ekonum.fr"
-      # Connexion Google, laissée désactivée. Les quatre variables sont requises : s'il en manque
-      # une — et SYNC_HUB_GOOGLE_ALLOWED_DOMAINS en particulier — le flux reste désactivé, ce qui
-      # est voulu : sans restriction de domaine, « se connecter avec Google » vaut pour tout
-      # compte Google existant. Voir docs/CONNEXION-GOOGLE.md.
-      SYNC_HUB_GOOGLE_CLIENT_ID: ""
-      SYNC_HUB_GOOGLE_CLIENT_SECRET: ""
-      SYNC_HUB_GOOGLE_REDIRECT_URI: "https://sync-hub.robin-joseph.fr/api/auth/google/callback"
-      SYNC_HUB_GOOGLE_ALLOWED_DOMAINS: "ekonum.fr"
     labels:
       # Watchtower tourne sur ce serveur en --label-enable : il ne met à jour que les conteneurs
       # qui le demandent explicitement. Avec ce label, un push sur main suffit — la CI pousse

@@ -7,8 +7,6 @@ interface AuthContextValue {
   loading: boolean;
   authEnabled: boolean;
   setupRequired: boolean;
-  googleAvailable: boolean;
-  googleDomains: string[];
   login: (email: string, password: string) => Promise<void>;
   setup: (email: string, displayName: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -22,8 +20,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
-  const [googleAvailable, setGoogleAvailable] = useState(false);
-  const [googleDomains, setGoogleDomains] = useState<string[]>([]);
 
   const checkStatus = async () => {
     try {
@@ -31,8 +27,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const status = await api.authStatus();
       setAuthEnabled(status.authEnabled);
       setSetupRequired(status.setupRequired);
-      setGoogleAvailable(status.googleAvailable === true);
-      setGoogleDomains(status.googleDomains ?? []);
       setUser(status.user);
     } catch (err) {
       console.error('Failed to check auth status:', err);
@@ -77,8 +71,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         loading,
         authEnabled,
-        googleAvailable,
-        googleDomains,
         setupRequired,
         login,
         setup,
