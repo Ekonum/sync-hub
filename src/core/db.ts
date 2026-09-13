@@ -102,6 +102,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_engine_thread_time ON messages(source_en
 -- 19 ms with it — and it makes the plain count ten times faster too (203 ms -> 19 ms), since that
 -- one no longer touches the table either.
 CREATE INDEX IF NOT EXISTS idx_messages_thread_role ON messages(thread_id, role);
+-- Scoping a question to a project, and to a period within it — the shape of every billing query,
+-- and the one that stays computed live rather than read from the daily snapshot precisely because
+-- it is what ends up on an invoice. Without it that is a full scan of the messages table: measured
+-- at 11 s for one project, slower than asking about all of them.
+CREATE INDEX IF NOT EXISTS idx_messages_project_time ON messages(project_id, timestamp);
+-- The other half of the same question: a period across every project — "what did September cost".
+-- The index above leads on project_id, so a date-only filter cannot use it and falls back to a
+-- full scan (8.8 s). Both shapes are asked when invoicing, so both are indexed.
+CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 -- Superseded by the three-column index above, which answers everything it did. Dropped rather
 -- than left behind: a second index on the same leading column is written on every insert.
 DROP INDEX IF EXISTS idx_messages_engine_timestamp;
