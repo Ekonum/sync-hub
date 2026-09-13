@@ -66,6 +66,16 @@ describe('refreshStatsSnapshots', () => {
     expect(db.getStatsSnapshot(TIMELINE_SNAPSHOT)).not.toBeNull();
   });
 
+  it('stores the totals, not just the series', () => {
+    // The billing figure adds these up. Recomputing them separately took 14.5 s for a number
+    // describing four years of work.
+    refreshStatsSnapshots(db);
+    const stored = db.getStatsSnapshot<{ summary: { totalTypingMs: number; messageCount: number } }>(TIMELINE_SNAPSHOT)!;
+    expect(stored.payload.summary).toHaveProperty('totalTypingMs');
+    expect(stored.payload.summary).toHaveProperty('byDate');
+    expect(stored.payload.summary).toHaveProperty('cappedMessageCount');
+  });
+
   it('records the typing pace alongside the series', () => {
     // A series taken at another pace would draw bars contradicting the totals beside them, so the
     // reader has to be able to tell. Storing the pace is what lets the route refuse a mismatch.
@@ -73,6 +83,21 @@ describe('refreshStatsSnapshots', () => {
     refreshStatsSnapshots(db);
     const stored = db.getStatsSnapshot<{ keystrokesPerMinute: number }>(TIMELINE_SNAPSHOT)!;
     expect(stored.payload.keystrokesPerMinute).toBe(db.getKeystrokesPerMinute(undefined));
+  });
+});
+
+describe('une forme retirée', () => {
+  it('is ignored rather than misread, and swept away on the next pass', () => {
+    // A stored payload whose shape changed is present, parses, and yields undefined where the new
+    // code looks — which turned the page into a 500 rather than a recompute. The key carries the
+    // version so the old row is never read, and the refresh drops it.
+    db.setStatsSnapshot('timeline.v1', { byDate: [] });
+    expect(db.getStatsSnapshot('timeline.v1')).not.toBeNull();
+
+    refreshStatsSnapshots(db);
+
+    expect(db.getStatsSnapshot('timeline.v1')).toBeNull();
+    expect(db.getStatsSnapshot(TIMELINE_SNAPSHOT)).not.toBeNull();
   });
 });
 

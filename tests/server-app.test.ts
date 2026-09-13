@@ -444,6 +444,64 @@ describe('sync-hub HTTP API', () => {
     expect(after.json().computedAt).toBeTruthy();
   });
 
+  describe('facturation', () => {
+    it('bills nothing until a rate is set, rather than assuming one', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/billing' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().settings.hourlyRateEur).toBe(0);
+      expect(res.json().amount.timeAmountEur).toBe(0);
+    });
+
+    it('stores a rate and a margin, and prices with them', async () => {
+      const saved = await app.inject({
+        method: 'PUT', url: '/api/account/billing',
+        payload: { hourlyRateEur: 105, tokenMarginPercent: -30, billWaitingTime: false },
+      });
+      expect(saved.statusCode).toBe(200);
+
+      const res = await app.inject({ method: 'GET', url: '/api/billing' });
+      expect(res.json().settings).toMatchObject({ hourlyRateEur: 105, tokenMarginPercent: -30 });
+      expect(res.json().amount.excluded.upperBoundEur).toBeGreaterThanOrEqual(0);
+    });
+
+    it('refuses a margin below -100, which would credit the client', async () => {
+      const res = await app.inject({
+        method: 'PUT', url: '/api/account/billing',
+        payload: { hourlyRateEur: 105, tokenMarginPercent: -150 },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('invalid_margin');
+    });
+
+    it('refuses a negative hourly rate', async () => {
+      const res = await app.inject({
+        method: 'PUT', url: '/api/account/billing',
+        payload: { hourlyRateEur: -10, tokenMarginPercent: 0 },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toBe('invalid_rate');
+    });
+
+    it('serves the unscoped total from the daily pass, and a scoped one live', async () => {
+      const { refreshStatsSnapshots } = await import('../src/core/stats-snapshot.js');
+      refreshStatsSnapshots(db);
+
+      // Nobody invoices four years of everything, so the overview may be this morning's — and says so.
+      const overview = await app.inject({ method: 'GET', url: '/api/billing' });
+      expect(overview.json().computedAt).toBeTruthy();
+
+      // A client and a month is what gets billed, so it is computed for the request.
+      const scoped = await app.inject({ method: 'GET', url: '/api/billing?projectId=proj-a' });
+      expect(scoped.json().computedAt).toBeUndefined();
+    });
+
+    it('answers on a scope, since that is what an invoice is drawn on', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/billing?projectId=proj-a&startDate=2026-09-01&endDate=2026-09-30' });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().amount).toHaveProperty('totalEur');
+    });
+  });
+
   it('POST /api/sync/rescan triggers the injected rescan function', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/sync/rescan' });
     expect(res.statusCode).toBe(200);

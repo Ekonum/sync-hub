@@ -1,6 +1,7 @@
 import type { Artifact, AuthStatus, Category, CreateSharedThreadInput, Memory, Message, Project, PublicSharedThreadData, PullResult, RemoteSyncState, SecretScanResult, SharedThread, SyncOverview, SyncStats, Thread, UpdateSharedThreadInput, User, UserRole, WebSocketEvent } from '../../types.js';
 import type { CostSummary } from '../../core/cost.js';
 import type { ActivitySummary } from '../../core/activity.js';
+import type { BillableAmount, BillingSettings } from '../../core/billing.js';
 
 export interface ApiTokenSummary {
   id: string;
@@ -216,6 +217,27 @@ export const api = {
       `/api/activity/overview${qs ? `?${qs}` : ''}`,
     );
   },
+  /** Time and tokens on the same scope, priced. Always live — this is the invoiced figure. */
+  billing: (scope?: { projectId?: string; threadId?: string; category?: string; startDate?: string; endDate?: string }) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(scope ?? {})) if (v) params.set(k, v);
+    const qs = params.toString();
+    return jsonFetch<{
+      amount: BillableAmount;
+      settings: BillingSettings;
+      keystrokesPerMinute: number;
+      cappedMessageCount: number;
+      messageCount: number;
+      /** Present only on the unscoped overview, which comes from the daily pass. */
+      computedAt?: string;
+    }>(`/api/billing${qs ? `?${qs}` : ''}`);
+  },
+  setBillingSettings: (settings: BillingSettings) =>
+    jsonFetch<{ ok: true; settings: BillingSettings }>('/api/account/billing', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    }),
   /** Recomputes the daily aggregates now, rather than waiting for the next pass. */
   refreshStats: () => jsonFetch<{ ok: true; refreshedAt: string }>('/api/stats/refresh', { method: 'POST' }),
   setTypingPace: (keystrokesPerMinute: number | null) =>

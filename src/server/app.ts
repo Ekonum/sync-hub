@@ -23,8 +23,8 @@ import * as codex from '../core/adapters/codex.js';
 import * as antigravity from '../core/adapters/antigravity.js';
 import { archiveThread, deleteProject, deleteThread, type ArchiveRoots } from '../core/archive.js';
 import { computeCostSummary, type CostSummary } from '../core/cost.js';
-import { COSTS_SNAPSHOT, TIMELINE_SNAPSHOT, isWholeCorpus, refreshStatsSnapshots } from '../core/stats-snapshot.js';
-import type { ActivitySummary } from '../core/activity.js';
+import { computeBillable, type BillingSettings } from '../core/billing.js';
+import { COSTS_SNAPSHOT, TIMELINE_SNAPSHOT, isWholeCorpus, refreshStatsSnapshots, type TimelineSnapshot } from '../core/stats-snapshot.js';
 import { runPullCycle } from '../core/sync-pull-client.js';
 import {
   formatThreadAsMarkdown,
@@ -806,11 +806,11 @@ export function createApp(deps: AppDeps): FastifyInstance {
     const rate = db.getKeystrokesPerMinute(req.user?.id);
     // Same reasoning as /api/costs: unfiltered comes from the snapshot, narrowed is computed.
     if (!req.query.projectId && !req.query.category) {
-      const snapshot = db.getStatsSnapshot<{ byDate: ActivitySummary['byDate']; keystrokesPerMinute: number }>(TIMELINE_SNAPSHOT);
+      const snapshot = db.getStatsSnapshot<TimelineSnapshot>(TIMELINE_SNAPSHOT);
       // A snapshot taken at another typing pace would draw bars that contradict the totals beside
       // them, so it is only used when the pace still matches.
       if (snapshot && snapshot.payload.keystrokesPerMinute === rate) {
-        return { byDate: snapshot.payload.byDate, computedAt: snapshot.computedAt };
+        return { byDate: snapshot.payload.summary.byDate, computedAt: snapshot.computedAt };
       }
     }
     return memoised(`activity-overview:${rate}:${JSON.stringify(req.query)}`, () => ({
@@ -820,6 +820,81 @@ export function createApp(deps: AppDeps): FastifyInstance {
         keystrokesPerMinute: rate,
       }).byDate,
     }));
+  });
+
+  /**
+   * What a slice of work comes to, time and tokens on the same scope.
+   *
+   * Always computed live, never from the daily snapshot: this is the figure that gets invoiced, so
+   * it has to describe the corpus as it stands rather than as it stood this morning. The indexes on
+   * (project_id, timestamp) and (timestamp) are what make that affordable.
+   */
+  app.get<{
+    Querystring: { projectId?: string; threadId?: string; category?: string; startDate?: string; endDate?: string; eurRate?: string };
+  }>('/api/billing', async (req) => {
+    const settings = db.getBillingSettings(req.user?.id);
+    const rate = db.getKeystrokesPerMinute(req.user?.id);
+    const scoped = !!(req.query.projectId || req.query.threadId || req.query.category || req.query.startDate || req.query.endDate);
+
+    // An unscoped total is an overview, not an invoice — nobody bills a client for four years of
+    // everything — so it comes from the daily snapshot, which the page labels. Narrow it to a
+    // client or a month and both halves are computed for the request.
+    if (!scoped) {
+      const timeline = db.getStatsSnapshot<TimelineSnapshot>(TIMELINE_SNAPSHOT);
+      const costs = db.getStatsSnapshot<CostSummary>(COSTS_SNAPSHOT);
+      if (timeline && costs && timeline.payload.keystrokesPerMinute === rate) {
+        return {
+          amount: computeBillable(timeline.payload.summary, costs.payload, settings),
+          settings,
+          keystrokesPerMinute: rate,
+          cappedMessageCount: timeline.payload.summary.cappedMessageCount,
+          messageCount: timeline.payload.summary.messageCount,
+          computedAt: timeline.computedAt,
+        };
+      }
+    }
+
+    const activity = db.getActivitySummary({
+      projectId: req.query.projectId,
+      threadId: req.query.threadId,
+      category: req.query.category,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      keystrokesPerMinute: rate,
+    });
+    const costs = computeCostSummary(db, {
+      projectId: req.query.projectId,
+      threadId: req.query.threadId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      eurRate: req.query.eurRate ? parseFloat(req.query.eurRate) : undefined,
+    });
+    return {
+      amount: computeBillable(activity, costs, settings),
+      settings,
+      keystrokesPerMinute: rate,
+      // Carried so the page can say what the time figure rests on without a second request.
+      cappedMessageCount: activity.cappedMessageCount,
+      messageCount: activity.messageCount,
+    };
+  });
+
+  /** The invoicing settings. Deliberately the user's own, like the typing pace. */
+  app.put<{ Body: Partial<BillingSettings> }>('/api/account/billing', async (req, reply) => {
+    if (!req.user) return reply.code(401).send({ error: 'unauthenticated' });
+    const body = req.body ?? {};
+    const hourlyRateEur = Number(body.hourlyRateEur);
+    const tokenMarginPercent = Number(body.tokenMarginPercent);
+    if (!Number.isFinite(hourlyRateEur) || hourlyRateEur < 0 || hourlyRateEur > 10_000) {
+      return reply.code(400).send({ error: 'invalid_rate', message: 'Taux horaire attendu entre 0 et 10 000 €' });
+    }
+    // Below -100 would turn an absorbed cost into a credit, which is not a thing anyone means.
+    if (!Number.isFinite(tokenMarginPercent) || tokenMarginPercent < -100 || tokenMarginPercent > 1000) {
+      return reply.code(400).send({ error: 'invalid_margin', message: 'Marge attendue entre -100 % et 1000 %' });
+    }
+    const settings: BillingSettings = { hourlyRateEur, tokenMarginPercent, billWaitingTime: body.billWaitingTime === true };
+    db.setBillingSettings(req.user.id, settings);
+    return { ok: true, settings };
   });
 
   /** Recomputes the daily snapshots now — what the refresh control on the page calls. */

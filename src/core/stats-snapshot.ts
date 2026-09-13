@@ -12,10 +12,29 @@
  * morning. That matters: a filtered figure is what ends up on an invoice.
  */
 import type { Db } from './db.js';
+import type { ActivitySummary } from './activity.js';
 import { computeCostSummary, type CostScope } from './cost.js';
 
-export const COSTS_SNAPSHOT = 'costs';
-export const TIMELINE_SNAPSHOT = 'timeline';
+/** What TIMELINE_SNAPSHOT holds. */
+export interface TimelineSnapshot {
+  summary: ActivitySummary;
+  keystrokesPerMinute: number;
+}
+
+/**
+ * Keys carry the shape's version.
+ *
+ * These payloads are stored JSON, so changing what goes into one makes every row written by the
+ * previous version unreadable — and unreadable in the worst way: the row is present, it parses,
+ * and the field the new code wants is simply undefined. That is how adding the totals to the
+ * timeline turned the page into a 500 rather than a recompute. Bumping the key retires the old
+ * shape instead of misreading it.
+ */
+export const COSTS_SNAPSHOT = 'costs.v1';
+export const TIMELINE_SNAPSHOT = 'timeline.v2';
+
+/** Rows under a key nothing reads any more — a retired shape, left behind by a bump above. */
+const LIVE_KEYS = [COSTS_SNAPSHOT, TIMELINE_SNAPSHOT];
 
 /** Whether a scope asks about everything — the only shape a stored aggregate can answer. */
 export function isWholeCorpus(scope: CostScope): boolean {
@@ -23,13 +42,17 @@ export function isWholeCorpus(scope: CostScope): boolean {
 }
 
 export function refreshStatsSnapshots(db: Db): void {
+  db.deleteStatsSnapshotsExcept(LIVE_KEYS);
   db.setStatsSnapshot(COSTS_SNAPSHOT, computeCostSummary(db, {}));
 
-  // The pace is stored with the series: a snapshot taken at another pace would draw bars that
-  // contradict the totals shown beside them, and silently.
+  // The whole summary, not just the series: the totals are what the billing figure adds up, and
+  // recomputing them separately took 14.5 s for a number that describes four years of work.
+  //
+  // The pace is stored with it. A snapshot taken at another pace would draw bars contradicting the
+  // totals printed beside them, and price hours that were counted at somebody else's speed.
   const keystrokesPerMinute = db.getKeystrokesPerMinute(undefined);
   db.setStatsSnapshot(TIMELINE_SNAPSHOT, {
-    byDate: db.getActivitySummary({ keystrokesPerMinute }).byDate,
+    summary: db.getActivitySummary({ keystrokesPerMinute }),
     keystrokesPerMinute,
   });
 }

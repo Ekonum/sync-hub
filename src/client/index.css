@@ -144,6 +144,14 @@
   }
 
   /* The label above a figure or a field: consistently muted, never shrunk below 14px. */
+  /* A stack for things that belong together — a field and its hint, a heading and its lines —
+     where the 24px of .stack would read as two separate blocks rather than one. */
+  .stack-tight {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem; /* 8px */
+  }
+
   .label {
     font-size: var(--text-sm);
     color: var(--color-muted-foreground);

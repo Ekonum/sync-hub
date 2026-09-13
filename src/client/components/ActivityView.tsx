@@ -5,6 +5,7 @@ import type { ActivitySummary } from '../../core/activity.js';
 import { api } from '../lib/api.js';
 import { ActivityTimeline } from './ActivityTimeline.js';
 import { SnapshotNotice } from './SnapshotNotice.js';
+import { BillingPanel } from './BillingPanel.js';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 
@@ -216,6 +217,10 @@ export function ActivityView({ projects }: { projects: Project[] }) {
               </p>
             </div>
           </div>
+
+          {/* The two analyses joined, on whatever the filters above already select — which is the
+              point: a client and a month is exactly the scope an invoice is drawn on. */}
+          <BillingPanel scope={{ projectId, category, startDate, endDate }} />
 
           <div className="stack rounded-xl border border-border bg-card p-6">
             <SnapshotNotice computedAt={overviewAt} onRefreshed={() => setRefreshToken((t) => t + 1)} />

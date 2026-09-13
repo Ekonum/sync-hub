@@ -1,0 +1,327 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: Sync Hub
+      - generic "Connecté (temps réel)" [ref=e57]
+    - navigation [ref=e8]:
+      - button "Projets" [ref=e9] [cursor=pointer]
+      - button "Recherche" [ref=e10] [cursor=pointer]
+      - button "Appareils" [ref=e11] [cursor=pointer]
+      - button "Non affecté33" [ref=e58] [cursor=pointer]
+      - button "Coûts" [ref=e13] [cursor=pointer]
+      - button "Temps" [active] [ref=e14] [cursor=pointer]
+    - generic "Cette machine, synchronisée avec https://sync-hub.robin-joseph.fr" [ref=e15]: Cet appareil
+    - button "Passer en thème sombre" [ref=e19] [cursor=pointer]
+    - button "Rescanner" [ref=e22] [cursor=pointer]
+    - button "R Robin Admin" [ref=e29] [cursor=pointer]:
+      - generic [ref=e30]: R
+      - generic [ref=e31]: Robin
+      - generic [ref=e32]: Admin
+  - generic [ref=e511]:
+    - generic [ref=e512]:
+      - heading "Temps passé" [level=1] [ref=e513]
+      - paragraph [ref=e514]: Le temps que représentent les conversations, par projet, par jour et par heure.
+    - generic [ref=e515]:
+      - generic [ref=e516]:
+        - text: Projet
+        - combobox "Projet" [ref=e517]:
+          - option "Tous" [selected]
+          - option "Sync Hub"
+          - option "EkoVideoCompressor"
+          - option "C00063 - MGX CONTROLE"
+          - option "C00075 - SLN Groupe"
+          - option "C00054 - DivertyBox"
+          - option "C00187 - ABS Propreté"
+          - option "C00142 - Canolle Fleurs"
+          - option "accordeon-3d"
+          - option "Perso - Accordéon Diatonique"
+          - option "ancestors"
+          - option "Ekonum - teams-chat-exporter"
+          - option "C00125 - ACRITEC"
+          - option "odoo-spreadsheet"
+          - option "Ekonum - Stratégie & Organisation"
+          - option "C00192 - Alepoc"
+          - option "Prospects - RSTP"
+          - option "Ekonum - Application Notes de frais"
+          - option "C00143 - CVR Contrôle"
+          - option "Odoo Core & Worktrees"
+          - option "Perso - templiers"
+          - option "C00033 - SANNITEC"
+          - option "C00096 - SoDigitale"
+          - option "Orpi"
+          - option "Prospects - Revolut"
+          - option "C00168 - PassPassion"
+          - option "Ekonum - Cadrage & Qualification Clients"
+          - option "C00047 - INSA Hauts-de-France"
+          - option "Ekonum - Prospection commerciale"
+          - option "C00037 - Domaine de Guillau"
+          - option "C00046 - Meat'Art"
+          - option "g-6865b6fc09948191bbecff0bd1c96867"
+          - option "C00032 - TheGoodButler"
+          - option "C00124 - Isol'En Nord"
+          - option "Ekonum - Partenariat Odoo & Cadrage"
+          - option "C00023 - AREUS SPORTS"
+          - option "Ekonum - Qualification Prospects & Contrats"
+          - option "C00040 - Bloom Coworking"
+          - option "Ekonum - Offres & Tarification"
+          - option "g-p-6821a8b065f8819192f46f36051c6233"
+          - option "Ekonum - Documentation Partenaire Odoo"
+          - option "Ekonum - Flowcharts & Process Métier"
+          - option "Ekonum - Modèles Devis & Produits"
+          - option "autonomous-factory-test"
+          - option "Perso - EcoCluster (Private Cloud Smartphones)"
+          - option "g-p-68893870b7788191b82847080bf07b89"
+          - option "odoo-demo-pes-20260910"
+          - option "ekonum-secret-broker"
+          - option "multi-gdrive-mcp"
+          - option "C00033 - SANNITEC"
+          - option "C00168 - PassPassion"
+          - option "registry-purge"
+          - option "C00198 - Marius Bernard"
+          - option "C00184 - Les Charpentiers du Pastel"
+          - option "g-3s6SJ5V7S"
+          - option "g-OwSz7srKK"
+          - option "g-POyKTwScO"
+          - option "g-3w1rEXGE0"
+          - option "g-xyrbbmlRT"
+          - option "Perso - Alternance & Robotique (Mirokaï)"
+          - option "g-bNiLAvz8R"
+          - option "g-h8l4uLHFQ"
+          - option "g-gFFsdkfMC"
+          - option "g-Nzr9YjLu6"
+          - option "g-2fkFE8rbu"
+          - option "g-iThwkWDbA"
+          - option "Non affecté"
+          - option "odoo-demo-pes-20260909"
+          - option "partners-dashboard"
+          - option "mollie-dashboard"
+          - option "g-p-67dbdc73bfe08191a25473b948b4acb9"
+      - generic [ref=e518]:
+        - text: Catégorie
+        - combobox "Catégorie" [ref=e519]:
+          - option "Toutes" [selected]
+          - option "client"
+          - option "ekonum"
+          - option "perso"
+      - generic [ref=e520]:
+        - text: Du
+        - textbox "Du" [ref=e521]
+      - generic [ref=e522]:
+        - text: Au
+        - textbox "Au" [ref=e523]
+    - generic [ref=e524]:
+      - generic [ref=e525]:
+        - generic [ref=e526]: Rédaction
+        - generic [ref=e529]: 2026 h
+        - paragraph [ref=e530]: Estimé à 40 frappes/min, plafonné par le temps réellement écoulé.
+      - generic [ref=e531]:
+        - generic [ref=e532]: Réponse de l'IA
+        - generic [ref=e536]: 813 h
+        - paragraph [ref=e537]: "Mesuré, pas estimé : l'attente entre une question et sa réponse."
+      - generic [ref=e538]:
+        - generic [ref=e539]: Par message
+        - generic [ref=e542]: 4 min
+        - paragraph [ref=e543]: Rédaction moyenne sur les 28 633 messages écrits pendant la période.
+      - generic [ref=e544]:
+        - generic [ref=e545]: Sur quoi ça repose
+        - generic [ref=e548]: 172 034
+        - paragraph [ref=e549]: messages, dont 15 390 où le temps écoulé a limité l'estimation — donc mesurés plutôt que déduits.
+    - generic [ref=e550]:
+      - generic [ref=e551]:
+        - heading "À refacturer" [level=2] [ref=e556]
+        - button "Réglages" [ref=e557]
+      - generic [ref=e561]: 253 096 €
+      - paragraph [ref=e562]: Vue d'ensemble, arrêtée au 13/09/2026 23:14. Choisis un projet ou une période pour un montant calculé à l'instant.
+      - generic [ref=e563]:
+        - generic [ref=e564]:
+          - term [ref=e565]: Temps — 2026 h à 105 €/h
+          - definition [ref=e566]: 212 717 €
+          - paragraph [ref=e567]: Rédaction estimée, plafonnée par le temps réellement écoulé. L'attente des réponses (815 h) est mesurée mais n'est pas facturée.
+        - generic [ref=e568]:
+          - term [ref=e569]: Jetons — 40 379 €
+          - definition [ref=e570]: 40 379 €
+          - paragraph [ref=e571]: Consommation mesurée et interpolée, aux tarifs publiés.
+      - generic [ref=e575]:
+        - paragraph [ref=e576]: Volontairement hors du total
+        - paragraph [ref=e577]: "522 € de borne haute d'archives. Un export ne dit ni quel modèle a répondu ni ce qu'il a consommé : ce montant suppose le modèle le plus cher de l'époque. C'est un ordre de grandeur, pas un prix."
+        - paragraph [ref=e578]: 17 messages dont le modèle n'a pas de tarif publié, comptés à zéro plutôt que devinés.
+    - generic [ref=e579]:
+      - paragraph [ref=e580]:
+        - generic [ref=e581]: Chiffres arrêtés à l'instant.
+        - button "Recalculer" [ref=e582]
+      - generic [ref=e588]:
+        - generic [ref=e589]:
+          - heading "Toute la période" [level=2] [ref=e590]
+          - paragraph [ref=e591]: Glisser sur le graphique pour choisir une période.
+        - img "Temps par jour du 20 déc. 2022 au 13 sept. 2026" [ref=e592]:
+          - generic [ref=e593]: 0 min
+          - generic [ref=e595]: 12 h
+          - generic [ref=e597]: 24 h
+          - generic [ref=e599]: 36 h
+        - generic [ref=e1820]:
+          - generic [ref=e1821]: 20 déc. 2022
+          - generic [ref=e1822]: 13 sept. 2026
+    - generic [ref=e1823]:
+      - heading "Répartition par heure" [level=2] [ref=e1824]
+      - paragraph [ref=e1825]: "Heure la plus chargée : 14h — 266 h"
+      - generic [ref=e1826]:
+        - generic "00h — 14 h" [ref=e1827]: "0"
+        - generic "01h — 4.9 h" [ref=e1830]
+        - generic "02h — 46 min" [ref=e1832]
+        - generic "03h — 1.2 h" [ref=e1834]: "3"
+        - generic "04h — 6.3 h" [ref=e1837]
+        - generic "05h — 22 h" [ref=e1839]
+        - generic "06h — 68 h" [ref=e1841]: "6"
+        - generic "07h — 117 h" [ref=e1844]
+        - generic "08h — 187 h" [ref=e1846]
+        - generic "09h — 241 h" [ref=e1848]: "9"
+        - generic "10h — 195 h" [ref=e1851]
+        - generic "11h — 153 h" [ref=e1853]
+        - generic "12h — 198 h" [ref=e1855]: "12"
+        - generic "13h — 253 h" [ref=e1858]
+        - generic "14h — 266 h" [ref=e1860]
+        - generic "15h — 262 h" [ref=e1862]: "15"
+        - generic "16h — 202 h" [ref=e1865]
+        - generic "17h — 178 h" [ref=e1867]
+        - generic "18h — 127 h" [ref=e1869]: "18"
+        - generic "19h — 92 h" [ref=e1872]
+        - generic "20h — 83 h" [ref=e1874]
+        - generic "21h — 83 h" [ref=e1876]: "21"
+        - generic "22h — 55 h" [ref=e1879]
+        - generic "23h — 31 h" [ref=e1881]
+    - generic [ref=e1883]:
+      - heading "Par projet" [level=2] [ref=e1884]
+      - table [ref=e1886]:
+        - rowgroup [ref=e1887]:
+          - row [ref=e1888]:
+            - columnheader "Projet" [ref=e1889]
+            - columnheader "Rédaction" [ref=e1890]
+            - columnheader "Réponse IA" [ref=e1891]
+            - columnheader "Total" [ref=e1892]
+        - rowgroup [ref=e1893]:
+          - row [ref=e1894]:
+            - cell "Non affecté" [ref=e1895]
+            - cell "1366 h" [ref=e1896]
+            - cell "333 h" [ref=e1897]
+            - cell "1699 h" [ref=e1898]
+          - row [ref=e1899]:
+            - cell "Odoo Core & Worktrees" [ref=e1900]
+            - cell "280 h" [ref=e1901]
+            - cell "106 h" [ref=e1902]
+            - cell "386 h" [ref=e1903]
+          - row [ref=e1904]:
+            - cell "Ekonum - Stratégie & Organisation" [ref=e1905]
+            - cell "24 h" [ref=e1906]
+            - cell "63 h" [ref=e1907]
+            - cell "87 h" [ref=e1908]
+          - row [ref=e1909]:
+            - cell "EkoVideoCompressor" [ref=e1910]
+            - cell "28 h" [ref=e1911]
+            - cell "44 h" [ref=e1912]
+            - cell "72 h" [ref=e1913]
+          - row [ref=e1914]:
+            - cell "C00143 - CVR Contrôle" [ref=e1915]
+            - cell "31 h" [ref=e1916]
+            - cell "40 h" [ref=e1917]
+            - cell "71 h" [ref=e1918]
+          - row [ref=e1919]:
+            - cell "Perso - Accordéon Diatonique" [ref=e1920]
+            - cell "4.9 h" [ref=e1921]
+            - cell "59 h" [ref=e1922]
+            - cell "64 h" [ref=e1923]
+          - row [ref=e1924]:
+            - cell "C00047 - INSA Hauts-de-France" [ref=e1925]
+            - cell "48 h" [ref=e1926]
+            - cell "6.5 h" [ref=e1927]
+            - cell "55 h" [ref=e1928]
+          - row [ref=e1929]:
+            - cell "Sync Hub" [ref=e1930]
+            - cell "15 h" [ref=e1931]
+            - cell "30 h" [ref=e1932]
+            - cell "46 h" [ref=e1933]
+          - row [ref=e1934]:
+            - cell "Perso - EcoCluster (Private Cloud Smartphones)" [ref=e1935]
+            - cell "30 h" [ref=e1936]
+            - cell "8.2 h" [ref=e1937]
+            - cell "38 h" [ref=e1938]
+          - row [ref=e1939]:
+            - cell "C00125 - ACRITEC" [ref=e1940]
+            - cell "26 h" [ref=e1941]
+            - cell "11 h" [ref=e1942]
+            - cell "37 h" [ref=e1943]
+          - row [ref=e1944]:
+            - cell "Perso - templiers" [ref=e1945]
+            - cell "12 h" [ref=e1946]
+            - cell "18 h" [ref=e1947]
+            - cell "30 h" [ref=e1948]
+          - row [ref=e1949]:
+            - cell "C00063 - MGX CONTROLE" [ref=e1950]
+            - cell "13 h" [ref=e1951]
+            - cell "14 h" [ref=e1952]
+            - cell "27 h" [ref=e1953]
+          - row [ref=e1954]:
+            - cell "Perso - Alternance & Robotique (Mirokaï)" [ref=e1955]
+            - cell "21 h" [ref=e1956]
+            - cell "5.3 h" [ref=e1957]
+            - cell "26 h" [ref=e1958]
+          - row [ref=e1959]:
+            - cell "C00033 - SANNITEC" [ref=e1960]
+            - cell "15 h" [ref=e1961]
+            - cell "5.8 h" [ref=e1962]
+            - cell "21 h" [ref=e1963]
+          - row [ref=e1964]:
+            - cell "Ekonum - Application Notes de frais" [ref=e1965]
+            - cell "10 h" [ref=e1966]
+            - cell "9.9 h" [ref=e1967]
+            - cell "20 h" [ref=e1968]
+          - row [ref=e1969]:
+            - cell "Prospects - Revolut" [ref=e1970]
+            - cell "16 h" [ref=e1971]
+            - cell "3.0 h" [ref=e1972]
+            - cell "19 h" [ref=e1973]
+          - row [ref=e1974]:
+            - cell "C00023 - AREUS SPORTS" [ref=e1975]
+            - cell "17 h" [ref=e1976]
+            - cell "1.5 h" [ref=e1977]
+            - cell "19 h" [ref=e1978]
+          - row [ref=e1979]:
+            - cell "C00192 - Alepoc" [ref=e1980]
+            - cell "5.7 h" [ref=e1981]
+            - cell "11 h" [ref=e1982]
+            - cell "17 h" [ref=e1983]
+          - row [ref=e1984]:
+            - cell "Ekonum - Prospection commerciale" [ref=e1985]
+            - cell "10 h" [ref=e1986]
+            - cell "4.3 h" [ref=e1987]
+            - cell "15 h" [ref=e1988]
+          - row [ref=e1989]:
+            - cell "C00033 - SANNITEC" [ref=e1990]
+            - cell "5.7 h" [ref=e1991]
+            - cell "8.4 h" [ref=e1992]
+            - cell "14 h" [ref=e1993]
+          - row [ref=e1994]:
+            - cell "C00198 - Marius Bernard" [ref=e1995]
+            - cell "8.8 h" [ref=e1996]
+            - cell "3.8 h" [ref=e1997]
+            - cell "13 h" [ref=e1998]
+          - row [ref=e1999]:
+            - cell "C00032 - TheGoodButler" [ref=e2000]
+            - cell "7.4 h" [ref=e2001]
+            - cell "1.9 h" [ref=e2002]
+            - cell "9.3 h" [ref=e2003]
+          - row [ref=e2004]:
+            - cell "C00096 - SoDigitale" [ref=e2005]
+            - cell "3.3 h" [ref=e2006]
+            - cell "4.1 h" [ref=e2007]
+            - cell "7.4 h" [ref=e2008]
+          - row [ref=e2009]:
+            - cell "Prospects - RSTP" [ref=e2010]
+            - cell "4.0 h" [ref=e2011]
+            - cell "2.8 h" [ref=e2012]
+            - cell "6.8 h" [ref=e2013]
+          - row [ref=e2014]:
+            - cell "C00168 - PassPassion" [ref=e2015]
+            - cell "1.8 h" [ref=e2016]
+            - cell "4.8 h" [ref=e2017]
+            - cell "6.6 h" [ref=e2018]
+    - paragraph [ref=e2019]: "La rédaction est une estimation : un message n'est jamais compté plus longtemps que le temps écoulé depuis le précédent, et le contenu collé (code, courriels cités, blocs injectés) n'est pas compté du tout. Le rythme de frappe se règle dans Compte."

@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import { encode } from 'gpt-tokenizer';
 import { computeMessageHash } from './hash.js';
 import { modelForEra, providerForThread } from './era-models.js';
+import { DEFAULT_BILLING, type BillingSettings } from './billing.js';
 import { DEFAULT_KEYSTROKES_PER_MINUTE, durationsForMessage, typedCharacters } from './activity.js';
 import type { ActivityScope, ActivitySummary } from './activity.js';
 import { scanText, maskSecret } from './secret-scan.js';
@@ -845,6 +846,12 @@ export class Db {
     }
   }
 
+  /** Drops rows whose shape no longer has a reader — see the version note in stats-snapshot.ts. */
+  deleteStatsSnapshotsExcept(keys: string[]): void {
+    const placeholders = keys.map(() => '?').join(',');
+    this.raw.prepare(`DELETE FROM stats_snapshot WHERE key NOT IN (${placeholders})`).run(...keys);
+  }
+
   setStatsSnapshot(key: string, payload: unknown): void {
     this.raw
       .prepare(
@@ -880,6 +887,41 @@ export class Db {
          ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
       )
       .run(userId, String(value));
+  }
+
+  /**
+   * How this person invoices: the hourly rate, the margin on tokens, and whether the wait counts.
+   *
+   * Stored per user like the typing pace, and for the same reason — these are decisions about how
+   * somebody works, not properties of the corpus. Kept as one row rather than three so a partial
+   * write cannot leave a rate applied with somebody else's margin.
+   */
+  getBillingSettings(userId: string | undefined): BillingSettings {
+    if (!userId) return DEFAULT_BILLING;
+    const row = this.raw
+      .prepare("SELECT value FROM user_settings WHERE user_id = ? AND key = 'billing'")
+      .get(userId) as { value: string | null } | undefined;
+    if (!row?.value) return DEFAULT_BILLING;
+    try {
+      const stored = JSON.parse(row.value) as Partial<BillingSettings>;
+      return {
+        hourlyRateEur: Number.isFinite(stored.hourlyRateEur) ? Number(stored.hourlyRateEur) : DEFAULT_BILLING.hourlyRateEur,
+        tokenMarginPercent: Number.isFinite(stored.tokenMarginPercent) ? Number(stored.tokenMarginPercent) : DEFAULT_BILLING.tokenMarginPercent,
+        billWaitingTime: stored.billWaitingTime === true,
+      };
+    } catch {
+      // Unreadable settings must not price anything: fall back to the defaults, which bill nothing.
+      return DEFAULT_BILLING;
+    }
+  }
+
+  setBillingSettings(userId: string, settings: BillingSettings): void {
+    this.raw
+      .prepare(
+        `INSERT INTO user_settings (user_id, key, value) VALUES (?, 'billing', ?)
+         ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(userId, JSON.stringify(settings));
   }
 
   /**
