@@ -1357,11 +1357,11 @@ export class Db {
    * message returned. Delta-only by design, so resuming a linked conversation doesn't replay
    * everything each time it checks in.
    */
-  getThreadLinkDelta(threadId: string): Message[] {
+  getThreadLinkDelta(threadId: string, budgetChars = 40_000): { messages: Message[]; remaining: number } {
     const link = this.getThreadLink(threadId);
-    if (!link) return [];
+    if (!link) return { messages: [], remaining: 0 };
     const otherThreadIds = link.threadIds.filter((id) => id !== threadId);
-    if (otherThreadIds.length === 0) return [];
+    if (otherThreadIds.length === 0) return { messages: [], remaining: 0 };
 
     const member = this.raw.prepare('SELECT last_synced_at FROM thread_link_members WHERE thread_id = ?').get(threadId) as any;
     const since = member?.last_synced_at as string | null;
@@ -1375,11 +1375,30 @@ export class Db {
         : this.raw.prepare(`SELECT * FROM messages WHERE thread_id IN (${placeholders}) ORDER BY timestamp ASC`).all(...otherThreadIds)
     ) as any[];
 
-    if (rows.length > 0) {
-      const newWatermark = rows[rows.length - 1].timestamp;
+    // Bounded, because the first call on a group has no watermark and "everything new" is then
+    // everything: linking this conversation to its Codex counterpart returned 456 KB across 9 595
+    // lines, which overran the caller's context outright. Oldest first and the watermark advanced
+    // only to what was actually handed over, so the rest is not lost — the next call continues from
+    // there. Truncating the tail and moving the watermark past it would silently drop messages,
+    // which in a store whose whole promise is verbatim would be the worse failure by far.
+    let used = 0;
+    let cut = rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      used += (rows[i].content?.length ?? 0) + (rows[i].thought?.length ?? 0) + (rows[i].tool_results?.length ?? 0);
+      // Always hand over at least one message, however large, or a single huge one would wedge the
+      // cursor and every later call would return nothing.
+      if (used > budgetChars && i > 0) {
+        cut = i;
+        break;
+      }
+    }
+    const served = rows.slice(0, cut);
+
+    if (served.length > 0) {
+      const newWatermark = served[served.length - 1].timestamp;
       this.raw.prepare('UPDATE thread_link_members SET last_synced_at = ? WHERE thread_id = ?').run(newWatermark, threadId);
     }
-    return rows.map(rowToMessage);
+    return { messages: served.map(rowToMessage), remaining: rows.length - served.length };
   }
 
   // --- messages -----------------------------------------------------------

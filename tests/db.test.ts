@@ -395,39 +395,84 @@ describe('Db thread links', () => {
     db.insertMessage(makeMessage({ id: 'm-b1', threadId: 'thread-b', hash: 'h-b1', timestamp: '2026-01-02T00:00:00Z', content: 'depuis B' }));
 
     const delta = db.getThreadLinkDelta('thread-a');
-    expect(delta.map((m) => m.content)).toEqual(['depuis B']); // never its own messages
+    expect(delta.messages.map((m) => m.content)).toEqual(['depuis B']); // never its own messages
+  });
+
+  it('bounds a first catch-up, and loses nothing doing it', () => {
+    // The first call has no watermark, so "everything new" is everything: linking a real
+    // conversation to its Codex counterpart returned 456 KB and overran the caller's context.
+    db.upsertThread({
+      id: 'thread-c', projectId: 'proj-test', title: 'C', originEngine: 'codex', engineIds: {},
+      messageCount: 0, promptCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', status: 'active',
+    });
+    for (let i = 0; i < 12; i++) {
+      db.insertMessage(makeMessage({
+        id: `big-${i}`, threadId: 'thread-c', hash: `hbig-${i}`,
+        timestamp: `2026-02-0${1 + Math.floor(i / 4)}T0${i % 4}:00:00Z`,
+        content: 'x'.repeat(1000),
+      }));
+    }
+    db.linkThreads(['thread-a', 'thread-c']);
+
+    const first = db.getThreadLinkDelta('thread-a', 3_000);
+    expect(first.messages.length).toBeGreaterThan(0);
+    expect(first.messages.length).toBeLessThan(12);
+    expect(first.remaining).toBe(12 - first.messages.length);
+
+    // The watermark stopped where the handover did, so the rest arrives on the next call rather
+    // than being skipped — the failure that would matter in a store promising verbatim.
+    const second = db.getThreadLinkDelta('thread-a', 3_000);
+    expect(second.messages[0].id).toBe(`big-${first.messages.length}`);
+
+    let seen = first.messages.length + second.messages.length;
+    for (let guard = 0; guard < 20 && seen < 12; guard++) seen += db.getThreadLinkDelta('thread-a', 3_000).messages.length;
+    expect(seen).toBe(12);
+  });
+
+  it('hands over an over-sized message alone rather than wedging the cursor', () => {
+    db.upsertThread({
+      id: 'thread-d', projectId: 'proj-test', title: 'D', originEngine: 'codex', engineIds: {},
+      messageCount: 0, promptCount: 0, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', status: 'active',
+    });
+    db.insertMessage(makeMessage({ id: 'huge', threadId: 'thread-d', hash: 'hhuge', timestamp: '2026-03-01T00:00:00Z', content: 'y'.repeat(90_000) }));
+    db.linkThreads(['thread-a', 'thread-d']);
+
+    // Refusing it would leave the cursor stuck on it forever, and every later call empty.
+    const delta = db.getThreadLinkDelta('thread-a', 1_000);
+    expect(delta.messages).toHaveLength(1);
+    expect(db.getThreadLinkDelta('thread-a', 1_000).messages).toHaveLength(0);
   });
 
   it('getThreadLinkDelta only returns what is new since the last call for that thread — never replays the whole history', () => {
     db.linkThreads(['thread-a', 'thread-b']);
     db.insertMessage(makeMessage({ id: 'm-b1', threadId: 'thread-b', hash: 'h-b1', timestamp: '2026-01-01T00:00:00Z', content: 'premier' }));
 
-    expect(db.getThreadLinkDelta('thread-a').map((m) => m.content)).toEqual(['premier']);
-    expect(db.getThreadLinkDelta('thread-a')).toEqual([]); // already consumed, nothing new
+    expect(db.getThreadLinkDelta('thread-a').messages.map((m) => m.content)).toEqual(['premier']);
+    expect(db.getThreadLinkDelta('thread-a').messages).toEqual([]); // already consumed, nothing new
 
     db.insertMessage(makeMessage({ id: 'm-b2', threadId: 'thread-b', hash: 'h-b2', timestamp: '2026-01-02T00:00:00Z', content: 'second' }));
-    expect(db.getThreadLinkDelta('thread-a').map((m) => m.content)).toEqual(['second']); // only the delta
+    expect(db.getThreadLinkDelta('thread-a').messages.map((m) => m.content)).toEqual(['second']); // only the delta
 
     // The other side's watermark is independent — thread-b still hasn't consumed thread-a's messages.
     db.insertMessage(makeMessage({ id: 'm-a1', threadId: 'thread-a', hash: 'h-a1', timestamp: '2026-01-03T00:00:00Z', content: 'de A' }));
-    expect(db.getThreadLinkDelta('thread-b').map((m) => m.content)).toEqual(['de A']);
+    expect(db.getThreadLinkDelta('thread-b').messages.map((m) => m.content)).toEqual(['de A']);
   });
 
   it('getThreadLinkDelta returns an empty array for an unlinked thread', () => {
-    expect(db.getThreadLinkDelta('thread-solo')).toEqual([]);
+    expect(db.getThreadLinkDelta('thread-solo').messages).toEqual([]);
   });
 
   it('when the calling thread itself spoke last in the group, the next check returns nothing — its own new activity is never mistaken for "news from elsewhere"', () => {
     db.linkThreads(['thread-a', 'thread-b']);
     db.insertMessage(makeMessage({ id: 'm-b1', threadId: 'thread-b', hash: 'h-b1', timestamp: '2026-01-01T00:00:00Z', content: 'depuis B' }));
-    expect(db.getThreadLinkDelta('thread-a').map((m) => m.content)).toEqual(['depuis B']); // consumes it, watermark advances
+    expect(db.getThreadLinkDelta('thread-a').messages.map((m) => m.content)).toEqual(['depuis B']); // consumes it, watermark advances
 
     // thread-a keeps talking on its own — several new messages, all on thread-a, none on thread-b.
     db.insertMessage(makeMessage({ id: 'm-a1', threadId: 'thread-a', hash: 'h-a1', timestamp: '2026-01-02T00:00:00Z', content: 'A continue' }));
     db.insertMessage(makeMessage({ id: 'm-a2', threadId: 'thread-a', hash: 'h-a2', timestamp: '2026-01-03T00:00:00Z', content: 'A encore' }));
 
     // thread-a is now the last to have spoken in the group as a whole — nothing new from anyone else.
-    expect(db.getThreadLinkDelta('thread-a')).toEqual([]);
+    expect(db.getThreadLinkDelta('thread-a').messages).toEqual([]);
   });
 });
 

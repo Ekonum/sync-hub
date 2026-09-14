@@ -307,7 +307,7 @@ export function createMcpServer(
       if (!link) {
         return { content: [{ type: 'text', text: `Ce fil n'est lié à aucun groupe — utilise link_threads pour en créer un.` }] };
       }
-      const messages = db.getThreadLinkDelta(threadId);
+      const { messages, remaining } = db.getThreadLinkDelta(threadId);
 
       // Built before the early return, so the card shows the group even on a quiet turn — "nothing
       // new in the other two" is exactly what someone wants to see at a glance.
@@ -336,8 +336,14 @@ export function createMcpServer(
           structuredContent: view as unknown as Record<string, unknown>,
         };
       }
+      // Said plainly rather than left to be noticed: a caller that does not know more is waiting
+      // will act as though it has caught up.
+      const tail = remaining > 0
+        ? `\n\n— ${remaining} messages plus récents restent à lire dans ce groupe. Rappelle get_thread_link_updates ` +
+          `pour la suite ; rien n'est perdu, le curseur ne dépasse pas ce qui t'a été remis.`
+        : '';
       return {
-        content: [{ type: 'text', text: messages.map(formatMessage).join('\n\n') }],
+        content: [{ type: 'text', text: messages.map(formatMessage).join('\n\n') + tail }],
         structuredContent: view as unknown as Record<string, unknown>,
       };
     }),
