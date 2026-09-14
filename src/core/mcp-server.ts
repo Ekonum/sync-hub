@@ -6,6 +6,10 @@ import { archiveThread, deleteThread, type ArchiveRoots } from './archive.js';
 import { updatePointerFiles } from './pointer-files.js';
 import { tryIngestMissingThread, type IngestSingleRoots } from './ingest-single.js';
 import { UNASSIGNED_PROJECT_ID, type Message, type Project } from '../types.js';
+import { LINKED_THREADS_HTML, LINKED_THREADS_URI, type LinkedThreadsView } from './mcp-ui/linked-threads.js';
+
+/** The one content type MCP Apps defines today (SEP-1865). */
+const MCP_APP_MIME = 'text/html;profile=mcp-app';
 
 const ENGINE_LABEL: Record<string, string> = { 'claude-code': 'Claude Code', codex: 'Codex', antigravity: 'Antigravity' };
 
@@ -88,7 +92,31 @@ export function createMcpServer(
   archiveRoots: ArchiveRoots,
   ingestSingleRoots: IngestSingleRoots = {},
 ): McpServer {
-  const server = new McpServer({ name: 'sync-hub', version: '0.1.0' });
+  const server = new McpServer(
+    { name: 'sync-hub', version: '0.1.0' },
+    {
+      capabilities: {
+        // MCP Apps (SEP-1865). Declaring it is what lets a host render the card below; a host that
+        // does not negotiate the extension simply never asks for the resource, and the tools carry
+        // on returning the text they always did.
+        extensions: { 'io.modelcontextprotocol/ui': { mimeTypes: [MCP_APP_MIME] } },
+      },
+    },
+  );
+
+  server.registerResource(
+    'linked-threads',
+    LINKED_THREADS_URI,
+    {
+      title: 'Fils liés',
+      description: "Ce qui a bougé dans les autres fils du même groupe, à côté de la conversation.",
+      mimeType: MCP_APP_MIME,
+      // No domain is declared because the document fetches nothing at all — see its own note.
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: MCP_APP_MIME, text: LINKED_THREADS_HTML }],
+    }),
+  );
 
   server.registerTool(
     'get_time_spent',
@@ -259,6 +287,10 @@ export function createMcpServer(
     'get_thread_link_updates',
     {
       title: 'Nouveautés des autres fils liés (delta uniquement)',
+      // Where the card comes from. `visibility` says the result is for both the model and the
+      // rendered app: the assistant still gets the verbatim messages it needs to reason with, and
+      // the person gets the group at a glance beside them.
+      _meta: { ui: { resourceUri: LINKED_THREADS_URI, visibility: ['model', 'app'] } },
       description:
         "Retourne, verbatim, uniquement les messages des AUTRES fils du même groupe de liaison que threadId, apparus depuis " +
         "le dernier appel de cet outil pour ce fil précis — jamais l'historique complet. Fait avancer le curseur de ce fil à " +
@@ -276,10 +308,38 @@ export function createMcpServer(
         return { content: [{ type: 'text', text: `Ce fil n'est lié à aucun groupe — utilise link_threads pour en créer un.` }] };
       }
       const messages = db.getThreadLinkDelta(threadId);
+
+      // Built before the early return, so the card shows the group even on a quiet turn — "nothing
+      // new in the other two" is exactly what someone wants to see at a glance.
+      const newPerThread = new Map<string, number>();
+      for (const m of messages) newPerThread.set(m.threadId, (newPerThread.get(m.threadId) ?? 0) + 1);
+      const view: LinkedThreadsView = {
+        threadId,
+        threads: link.threadIds.flatMap((id) => {
+          const thread = db.getThread(id);
+          if (!thread) return [];
+          const project = thread.projectId === UNASSIGNED_PROJECT_ID ? null : (db.getProject(thread.projectId)?.name ?? null);
+          return [{
+            id,
+            title: thread.title,
+            engine: ENGINE_LABEL[thread.originEngine] ?? thread.originEngine,
+            project,
+            updatedAt: thread.updatedAt,
+            newMessages: newPerThread.get(id) ?? 0,
+          }];
+        }),
+      };
+
       if (messages.length === 0) {
-        return { content: [{ type: 'text', text: `Rien de nouveau depuis la dernière vérification dans ce groupe de ${link.threadIds.length} fils.` }] };
+        return {
+          content: [{ type: 'text', text: `Rien de nouveau depuis la dernière vérification dans ce groupe de ${link.threadIds.length} fils.` }],
+          structuredContent: view as unknown as Record<string, unknown>,
+        };
       }
-      return { content: [{ type: 'text', text: messages.map(formatMessage).join('\n\n') }] };
+      return {
+        content: [{ type: 'text', text: messages.map(formatMessage).join('\n\n') }],
+        structuredContent: view as unknown as Record<string, unknown>,
+      };
     }),
   );
 

@@ -15,3 +15,4 @@ imports/claude/*
 # to version, and would immediately go stale/conflict for anyone running their own instance.
 /CLAUDE.md
 /AGENTS.md
+.playwright-cli/

@@ -188,6 +188,58 @@ describe('sync-hub MCP server', () => {
     expect(text).toContain('demo'); // project name surfaced alongside the match
   });
 
+  describe('la carte des fils liés (MCP Apps)', () => {
+    it('declares the UI extension, so a host knows it can render one', async () => {
+      // Without this the host never asks for the resource and the card silently never appears.
+      const caps = client.getServerCapabilities() as any;
+      expect(caps?.extensions?.['io.modelcontextprotocol/ui']?.mimeTypes).toContain('text/html;profile=mcp-app');
+    });
+
+    it('serves a self-contained document under a ui:// uri', async () => {
+      const listed = await client.listResources();
+      const entry = listed.resources.find((r) => r.uri === 'ui://sync-hub/linked-threads');
+      expect(entry?.mimeType).toBe('text/html;profile=mcp-app');
+
+      const read = await client.readResource({ uri: 'ui://sync-hub/linked-threads' });
+      const html = (read.contents[0] as any).text as string;
+      expect(html).toContain('ui/notifications/tool-result');
+      // Nothing is fetched from anywhere: the easiest promise to keep about a sandboxed iframe.
+      expect(html).not.toMatch(/src=["']https?:/);
+      expect(html).not.toMatch(/@import|fonts\.googleapis/);
+    });
+
+    it('points the tool at the resource', async () => {
+      const tools = await client.listTools();
+      const tool = tools.tools.find((t) => t.name === 'get_thread_link_updates') as any;
+      expect(tool._meta.ui.resourceUri).toBe('ui://sync-hub/linked-threads');
+      expect(tool._meta.ui.visibility).toEqual(['model', 'app']);
+    });
+
+    it('carries the group in structuredContent, even on a turn with nothing new', async () => {
+      await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
+      await client.callTool({ name: 'get_thread_link_updates', arguments: { threadId: 't1' } }); // drains
+
+      const quiet = await client.callTool({ name: 'get_thread_link_updates', arguments: { threadId: 't1' } });
+      const view = quiet.structuredContent as any;
+      // "nothing new in the other one" is itself worth showing, so the card is still drawn.
+      expect(view.threadId).toBe('t1');
+      expect(view.threads).toHaveLength(2);
+      expect(view.threads.every((t: any) => t.newMessages === 0)).toBe(true);
+      expect(view.threads.map((t: any) => t.title)).toContain('Fil 2');
+    });
+
+    it('counts what arrived per thread', async () => {
+      db.insertMessage(message({ id: 'ma', threadId: 't2', hash: 'ha', timestamp: '2026-01-01T00:00:00Z', content: 'du neuf ailleurs' }));
+      db.insertMessage(message({ id: 'mb', threadId: 't2', hash: 'hb', timestamp: '2026-01-02T00:00:00Z', content: 'et encore' }));
+      await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
+      const first = await client.callTool({ name: 'get_thread_link_updates', arguments: { threadId: 't1' } });
+      const view = first.structuredContent as any;
+      const other = view.threads.find((t: any) => t.id === 't2');
+      expect(other.newMessages).toBe(2);
+      expect(view.threads.find((t: any) => t.id === 't1').newMessages).toBe(0);
+    });
+  });
+
   describe('link_threads / get_thread_link_updates', () => {
     it('links two threads and confirms it with their titles', async () => {
       const result = await client.callTool({ name: 'link_threads', arguments: { threadIds: ['t1', 't2'] } });
