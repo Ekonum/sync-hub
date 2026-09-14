@@ -194,12 +194,25 @@ L'ordre et les décisions, pour ne pas les redemander.
 | Sujet | Décision |
 |---|---|
 | Chevauchement des durées (jour à 35,5 h) | **Pas prioritaire.** Une personne qui fait plusieurs choses à la fois, c'est acceptable tel quel. À revoir plus tard — mais reste un préalable avant de facturer à l'heure. |
-| Taux horaire + marge sur les jetons | **Lancé.** |
+| Taux horaire + marge sur les jetons | **Fait** (`d44922b`). Panneau « À refacturer » sur la vue Temps, réglages par compte. La borne haute des archives et les messages sans tarif publié restent hors du total, affichés à côté avec la raison. L'attente des réponses n'est pas facturée par défaut — 14,5 h contre 4,3 h de rédaction sur un projet, le choix vaut un facteur quinze. |
 | Feuilles de temps automatiques | Le MCP doit exposer les bonnes informations ; **la correspondance avec les feuilles de temps Odoo se fera ailleurs**, sync-hub n'est pas le bon outil pour ça. |
-| Composant MCP Apps dans Cowork | **Lancé.** |
+| Composant MCP Apps dans Cowork | **Fait** (`e500513`). Ressource `ui://sync-hub/linked-threads`, accrochée à `get_thread_link_updates`. Lecture seule par nécessité : cet outil fait avancer le curseur, un composant qui le rappellerait consommerait les nouveautés qu'il affiche. |
 | Ligne d'état Claude Code | **Abandonné** — Robin n'utilise plus les outils en terminal. |
 | Pré-calcul des statistiques | **Fait** : une passe quotidienne, ce qui suffit. |
 | Pointes de latence sur le distant | **Élucidé** : même défaut d'index FTS que le local, corrigé côté hub le 8 septembre à 16 h 21. Vérifié sous charge réelle — 3 000 messages repoussés, maximum 0,40 s, zéro erreur, contre 102 erreurs avant. |
 | 27 fils sans tour utilisateur | **Vérifié, aucune perte.** 25 n'ont plus de fichier source (sessions archivées, médiane 2 messages) ; les 2 restants ont pour seul tour « utilisateur » un bloc `<recommended_plugins>`, que l'adaptateur Codex écarte à juste titre. |
 | Connexion Google | **Abandonnée** — Cloudflare Access fait le travail. Code, tests, doc et variables retirés (642 lignes). |
 | Tutoriel Connaissances | **Publié** : 7 articles sous `knowledge/429`, 3 captures refaites pour correspondre à l'interface actuelle. |
+
+---
+
+## Ce qui reste, au 2026-09-14
+
+- **Chevauchement des durées** — accepté pour l'instant, mais reste un préalable à toute facture
+  horaire : trois jours du corpus dépassent 24 h.
+- **Feuilles de temps automatiques** — le MCP expose `get_time_spent` et les coûts ; la
+  correspondance avec Odoo se fera ailleurs.
+- **Le composant Cowork n'a pas encore été vu dans Cowork.** Il est vérifié de bout en bout côté
+  serveur (capacité négociée, ressource servie, outil qui la référence, données structurées) et le
+  document a été rendu comme un hôte le ferait, à 1280 px et à 420 px. Ce qui n'est pas prouvé,
+  c'est que Cowork le dessine réellement — à regarder au prochain fil lié.
